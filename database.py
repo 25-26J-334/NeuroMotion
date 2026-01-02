@@ -92,10 +92,23 @@ class Database:
                 st.error(f"Error creating user: {e}")
             except:
                 print(f"Error creating user: {e}")
-            return None
-        finally:
             if cursor:
                 cursor.close()
+            return None
+    
+    def get_user_by_name_age(self, name: str, age: int) -> Optional[Dict]:
+        """Get existing user by name and age"""
+        if not self.is_connected():
+            return None
+        query = """
+        SELECT user_id, name, age, created_at 
+        FROM users 
+        WHERE name = ? AND age = ?
+        ORDER BY created_at DESC
+        LIMIT 1
+        """
+        result = self.execute_query(query, (name, age))
+        return result[0] if result else None
     
     def get_user(self, user_id: int) -> Optional[Dict]:
         """Get user by ID"""
@@ -210,13 +223,14 @@ class Database:
             SELECT 
                 u.name,
                 u.age,
-                SUM(s.total_jumps) as total_count,
-                SUM(s.total_points) as total_points,
-                SUM(s.total_bad_moves) as total_bad_moves,
                 COUNT(DISTINCT s.session_id) as total_sessions,
+                COUNT(j.jump_id) as total_count,
+                COALESCE(SUM(j.points), 0) as total_points,
+                COALESCE(SUM(j.bad_moves), 0) as total_bad_moves,
                 MAX(s.end_time) as last_session
             FROM users u
             JOIN sessions s ON u.user_id = s.user_id
+            JOIN jumps j ON s.session_id = j.session_id
             WHERE s.total_jumps > 0
             GROUP BY u.user_id, u.name, u.age
             ORDER BY total_points DESC, total_count DESC
@@ -227,13 +241,14 @@ class Database:
             SELECT 
                 u.name,
                 u.age,
-                SUM(s.total_squats) as total_count,
-                SUM(s.total_points) as total_points,
-                SUM(s.total_bad_moves) as total_bad_moves,
                 COUNT(DISTINCT s.session_id) as total_sessions,
+                COUNT(sq.squat_id) as total_count,
+                COALESCE(SUM(sq.points), 0) as total_points,
+                COALESCE(SUM(sq.bad_moves), 0) as total_bad_moves,
                 MAX(s.end_time) as last_session
             FROM users u
             JOIN sessions s ON u.user_id = s.user_id
+            JOIN squats sq ON s.session_id = sq.session_id
             WHERE s.total_squats > 0
             GROUP BY u.user_id, u.name, u.age
             ORDER BY total_points DESC, total_count DESC
@@ -244,13 +259,14 @@ class Database:
             SELECT 
                 u.name,
                 u.age,
-                SUM(s.total_pushups) as total_count,
-                SUM(s.total_points) as total_points,
-                SUM(s.total_bad_moves) as total_bad_moves,
                 COUNT(DISTINCT s.session_id) as total_sessions,
+                COUNT(p.pushup_id) as total_count,
+                COALESCE(SUM(p.points), 0) as total_points,
+                COALESCE(SUM(p.bad_moves), 0) as total_bad_moves,
                 MAX(s.end_time) as last_session
             FROM users u
             JOIN sessions s ON u.user_id = s.user_id
+            JOIN pushups p ON s.session_id = p.session_id
             WHERE s.total_pushups > 0
             GROUP BY u.user_id, u.name, u.age
             ORDER BY total_points DESC, total_count DESC
@@ -268,7 +284,7 @@ class Database:
                 MAX(s.end_time) as last_session
             FROM users u
             JOIN sessions s ON u.user_id = s.user_id
-            WHERE s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0
+            WHERE s.total_points > 0 OR s.total_squats > 0 OR s.total_pushups > 0
             GROUP BY u.user_id, u.name, u.age
             ORDER BY total_points DESC, total_count DESC
             LIMIT ?
@@ -462,3 +478,49 @@ class Database:
         """Close database connection"""
         if self.connection:
             self.connection.close()
+    
+    # ==================== TRAINING RECOMMENDATIONS ====================
+    
+    def get_user_recommendations(self, user_id: int, limit: int = 10) -> List[Dict]:
+        """Get user's training recommendations sorted by priority"""
+        query = """
+        SELECT * FROM training_recommendations 
+        WHERE user_id = ? AND is_completed = 0
+        ORDER BY 
+            CASE priority 
+                WHEN 'high' THEN 1 
+                WHEN 'medium' THEN 2 
+                WHEN 'low' THEN 3 
+            END,
+            created_at DESC
+        LIMIT ?
+        """
+        return self.execute_query(query, (user_id, limit)) or []
+    
+    def mark_recommendation_completed(self, recommendation_id: int) -> bool:
+        """Mark a recommendation as completed"""
+        query = """
+        UPDATE training_recommendations 
+        SET is_completed = 1, completed_at = ?
+        WHERE recommendation_id = ?
+        """
+        result = self.execute_query(query, (datetime.now(), recommendation_id), fetch=False)
+        return result is not None and result > 0
+    
+    def get_user_performance_analytics(self, user_id: int, days: int = 30) -> List[Dict]:
+        """Get user's performance analytics for the last N days"""
+        query = """
+        SELECT * FROM user_performance_analytics 
+        WHERE user_id = ? AND analysis_date >= datetime('now', '-{} days')
+        ORDER BY analysis_date DESC
+        """.format(days)
+        return self.execute_query(query, (user_id,)) or []
+    
+    def get_recommendations_by_type(self, user_id: int, rec_type: str) -> List[Dict]:
+        """Get recommendations by type for a user"""
+        query = """
+        SELECT * FROM training_recommendations 
+        WHERE user_id = ? AND recommendation_type = ? AND is_completed = 0
+        ORDER BY priority DESC, created_at DESC
+        """
+        return self.execute_query(query, (user_id, rec_type)) or []

@@ -16,6 +16,8 @@ from database import Database
 from jump_detector import JumpDetector
 from squat_detector import SquatDetector
 from pushup_detector import PushupDetector
+from recommendation_engine import RecommendationEngine
+from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
 
 # Page configuration
 st.set_page_config(
@@ -40,6 +42,8 @@ if 'processing' not in st.session_state:
     st.session_state.processing = False
 if 'exercise_type' not in st.session_state:
     st.session_state.exercise_type = 'jump'  # 'jump' or 'squat'
+if 'page' not in st.session_state:
+    st.session_state.page = 'main'
 if 'session_stats' not in st.session_state:
     st.session_state.session_stats = {
         'total_jumps': 0,
@@ -108,16 +112,29 @@ def user_registration():
         
         if submit:
             if name and age:
-                user_id = db.create_user(name, age)
+                # Check if user already exists
+                existing_user = db.get_user_by_name_age(name, age)
                 
-                if user_id:
-                    st.session_state.user_id = user_id
-                    st.session_state.user_name = name
-                    st.session_state.user_age = age
-                    st.success(f"Welcome, {name}! Let's start training!")
-                    st.rerun()
+                if existing_user:
+                    # Login existing user
+                    st.session_state.user_id = existing_user['user_id']
+                    st.session_state.user_name = existing_user['name']
+                    st.session_state.user_age = existing_user['age']
+                    st.success(f"Welcome back, {name}! Let's continue training!")
                 else:
-                    st.error("Failed to create user. Please check database connection.")
+                    # Create new user
+                    user_id = db.create_user(name, age)
+                    
+                    if user_id:
+                        st.session_state.user_id = user_id
+                        st.session_state.user_name = name
+                        st.session_state.user_age = age
+                        st.success(f"Welcome, {name}! Let's start training!")
+                    else:
+                        st.error("Failed to create user. Please check database connection.")
+                        return
+                
+                st.rerun()
             else:
                 st.warning("Please fill in all fields")
 
@@ -194,12 +211,16 @@ def main_app():
         
         st.markdown("---")
         
-        if st.button("📊 View Dashboard", use_container_width=True):
+        if st.button("📊 Dashboard", use_container_width=True):
             st.session_state.page = 'dashboard'
             st.rerun()
         
-        if st.button("🏆 View Leaderboard", use_container_width=True):
+        if st.button("🏆 Leaderboard", use_container_width=True):
             st.session_state.page = 'leaderboard'
+            st.rerun()
+        
+        if st.button("🎯 TrainPlans", use_container_width=True):
+            st.session_state.page = 'recommendations'
             st.rerun()
         
         if st.button("🤖 TrainBot", use_container_width=True):
@@ -222,6 +243,9 @@ def main_app():
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
+        
+        # Add recommendations summary to sidebar
+        # add_recommendations_to_sidebar()
     
     # Main content area - route based on exercise type
     if st.session_state.exercise_type == 'squat':
@@ -535,6 +559,18 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
                 0,  # total_squats for jump session
                 0   # total_pushups for jump session
             )
+            
+            # Generate new recommendations based on session performance
+            try:
+                recommendation_engine = RecommendationEngine()
+                new_recommendations = recommendation_engine.generate_recommendations(
+                    st.session_state.user_id, 
+                    st.session_state.session_id
+                )
+                if new_recommendations:
+                    st.info(f"🎯 Generated {len(new_recommendations)} new training recommendations based on your session!")
+            except Exception as e:
+                st.warning(f"Could not generate recommendations: {e}")
         
         if should_stop:
             st.warning("⏹️ Processing stopped by user")
@@ -1742,11 +1778,11 @@ def leaderboard_page():
             with col1:
                 fig = px.bar(df.head(10), x='name', y='total_points', 
                             title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="jump_leaderboard_points")
             with col2:
                 fig = px.bar(df.head(10), x='name', y='total_count',
                             title="Top 10 by Jumps", labels={'name': 'Name', 'total_count': 'Jumps'})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="jump_leaderboard_jumps")
         else:
             st.info("No jump data available yet. Start training to see rankings!")
     
@@ -1773,11 +1809,11 @@ def leaderboard_page():
             with col1:
                 fig = px.bar(df.head(10), x='name', y='total_points', 
                             title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="squat_leaderboard_points")
             with col2:
                 fig = px.bar(df.head(10), x='name', y='total_count',
                             title="Top 10 by Squats", labels={'name': 'Name', 'total_count': 'Squats'})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="squat_leaderboard_squats")
         else:
             st.info("No squat data available yet. Start training to see rankings!")
     
@@ -1804,11 +1840,11 @@ def leaderboard_page():
             with col1:
                 fig = px.bar(df.head(10), x='name', y='total_points', 
                             title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="pushup_leaderboard_points")
             with col2:
                 fig = px.bar(df.head(10), x='name', y='total_count',
                             title="Top 10 by Push-ups", labels={'name': 'Name', 'total_count': 'Push-ups'})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="pushup_leaderboard_pushups")
         else:
             st.info("No push-up data available yet. Start training to see rankings!")
     
@@ -1835,11 +1871,11 @@ def leaderboard_page():
             with col1:
                 fig = px.bar(df.head(10), x='name', y='total_points', 
                             title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="overall_leaderboard_points")
             with col2:
                 fig = px.bar(df.head(10), x='name', y='total_count',
                             title="Top 10 by Total Exercises", labels={'name': 'Name', 'total_count': 'Exercises'})
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="overall_leaderboard_total")
         else:
             st.info("No data available yet. Start training to see rankings!")
 
@@ -1904,7 +1940,7 @@ def dashboard_page():
                 title="Exercise Type Distribution",
                 color_discrete_sequence=px.colors.qualitative.Set3
             )
-            st.plotly_chart(fig_pie, use_container_width=True)
+            st.plotly_chart(fig_pie, use_container_width=True, key="dashboard_pie_chart")
         else:
             st.info("No exercise data available yet")
     
@@ -1950,7 +1986,7 @@ def dashboard_page():
                 yaxis_title="Count",
                 barmode='group'
             )
-            st.plotly_chart(fig_bar, use_container_width=True)
+            st.plotly_chart(fig_bar, use_container_width=True, key="dashboard_bar_chart")
         else:
             st.info("No performer data available yet")
     
@@ -1992,7 +2028,7 @@ def dashboard_page():
                 yaxis_title="Count",
                 hovermode='x unified'
             )
-            st.plotly_chart(fig_line, use_container_width=True)
+            st.plotly_chart(fig_line, use_container_width=True, key="dashboard_line_chart")
         
         with col2:
             fig_points = px.line(
@@ -2003,7 +2039,7 @@ def dashboard_page():
                 markers=True
             )
             fig_points.update_traces(line_color='#d62728', line_width=2)
-            st.plotly_chart(fig_points, use_container_width=True)
+            st.plotly_chart(fig_points, use_container_width=True, key="dashboard_points_chart")
         
         # Bar Charts - Sessions and Participants
         col3, col4 = st.columns(2)
@@ -2017,7 +2053,7 @@ def dashboard_page():
                 labels={'sessions': 'Number of Sessions', 'date': 'Date'}
             )
             fig_sessions.update_traces(marker_color='#9467bd')
-            st.plotly_chart(fig_sessions, use_container_width=True)
+            st.plotly_chart(fig_sessions, use_container_width=True, key="dashboard_sessions_chart")
         
         with col4:
             fig_participants = px.line(
@@ -2028,7 +2064,7 @@ def dashboard_page():
                 markers=True
             )
             fig_participants.update_traces(line_color='#8c564b', line_width=2)
-            st.plotly_chart(fig_participants, use_container_width=True)
+            st.plotly_chart(fig_participants, use_container_width=True, key="dashboard_participants_chart")
     else:
         st.info("No daily statistics available yet. Start training to see trends!")
     
@@ -2179,6 +2215,8 @@ else:
         dashboard_page()
     elif st.session_state.page == 'trainbot':
         trainbot_page()
+    elif st.session_state.page == 'recommendations':
+        recommendations_page()
     else:
         main_app()
 
