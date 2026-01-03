@@ -2,9 +2,9 @@
 
 PROJECT REPOSITORY - CHECKLIST 1 SUBMISSION
 
-Project ID: 25-26J-334
-Course: IT4010 - Research Project
-Team: Manulakshan | Mathumitha_IT21379338 | Sylvester | Jude Jawakker
+- Project ID: 25-26J-334
+-Course: IT4010 - Research Project
+-Team: Manulakshan | Mathumitha_IT21379338 | Sylvester | Jude Jawakker
 
 REPOSITORY LINK:
 https://github.com/25-26J-334/NeuroMotion.git
