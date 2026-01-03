@@ -76,8 +76,71 @@ def initialize_database():
 
 def user_registration():
     """User registration form"""
+    # Read and encode the image as base64
+    import base64
+    from pathlib import Path
+    
+    # Get the current directory and construct the path to the image
+    current_dir = Path(__file__).parent
+    image_path = current_dir / "static" / "css" / "athlete.png"
+    
+    # Read and encode the image
+    try:
+        with open(image_path, "rb") as image_file:
+            encoded_image = base64.b64encode(image_file.read()).decode()
+        
+        # Add CSS for background image using base64
+        st.markdown(f"""
+        <style>
+        .stApp {{
+            background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url("data:image/png;base64,{encoded_image}");
+            background-size: cover;
+            background-position: center 30%;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            min-height: 100vh;
+        }}
+        /* Target main content area */
+        .main .block-container {{
+            max-width: 100px !important;
+            padding: 15px !important;
+            background-color: rgba(255, 255, 255, 0.95) !important;
+            backdrop-filter: blur(10px) !important;
+            border-radius: 15px !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+            position: absolute !important;
+            left: 20px !important;
+            top: 20px !important;
+        }}
+        /* Target form specifically */
+        div[data-testid="stForm"] {{
+            max-width: 700px !important;
+        }}
+        </style>
+        """, unsafe_allow_html=True)
+    except Exception as e:
+        # Fallback if image loading fails
+        st.markdown("""
+        <style>
+        .stApp {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .main .block-container {
+            background-color: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 30px;
+            max-width: 600px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        }
+        </style>
+        """, unsafe_allow_html=True)
+    
     st.title("🏃 AI Athlete Trainer")
     st.markdown("### Welcome! Please enter your details to start training")
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("<br>", unsafe_allow_html=True)
     
     # Check database connection first
     db = initialize_database()
