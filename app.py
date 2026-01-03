@@ -18,6 +18,7 @@ from squat_detector import SquatDetector
 from pushup_detector import PushupDetector
 from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
+from performance_prediction import compute_performance_prediction
 
 # Page configuration
 st.set_page_config(
@@ -36,6 +37,8 @@ if 'user_age' not in st.session_state:
     st.session_state.user_age = None
 if 'session_id' not in st.session_state:
     st.session_state.session_id = None
+if 'session_start_time' not in st.session_state:
+    st.session_state.session_start_time = None
 if 'detector' not in st.session_state:
     st.session_state.detector = None
 if 'processing' not in st.session_state:
@@ -63,6 +66,62 @@ if 'page' not in st.session_state:
     st.session_state.page = 'main'
 if 'chat_history' not in st.session_state:
     st.session_state.chat_history = []
+if 'performance_prediction' not in st.session_state:
+    st.session_state.performance_prediction = None
+if 'performance_prediction_exercise' not in st.session_state:
+    st.session_state.performance_prediction_exercise = None
+
+def update_performance_prediction(db, exercise_type: str, current_count: int):
+    if not st.session_state.user_id:
+        return
+    if st.session_state.session_start_time is None:
+        st.session_state.session_start_time = datetime.now()
+
+    try:
+        recent_sessions = db.get_recent_sessions(st.session_state.user_id, exercise_type=exercise_type, limit=20)
+    except Exception:
+        recent_sessions = []
+
+    prediction = compute_performance_prediction(
+        recent_sessions=recent_sessions,
+        exercise_type=exercise_type,
+        current_count=int(current_count or 0),
+        current_points=int(st.session_state.session_stats.get('total_points', 0) or 0),
+        current_bad_moves=int(st.session_state.session_stats.get('total_bad_moves', 0) or 0),
+        current_session_start=st.session_state.session_start_time,
+    )
+    st.session_state.performance_prediction = prediction
+    st.session_state.performance_prediction_exercise = exercise_type
+
+def render_performance_prediction_panel(exercise_type: str):
+    st.markdown("### 🔮 Performance Prediction")
+    pred = st.session_state.get('performance_prediction')
+    pred_ex = st.session_state.get('performance_prediction_exercise')
+    if not pred or pred_ex != exercise_type:
+        st.caption("Start training to see predictions based on your session history.")
+        return
+
+    metric_col1, metric_col2, metric_col3 = st.columns(3)
+    with metric_col1:
+        st.metric("Pred Speed (reps/min)", f"{pred.predicted_speed_rpm:.1f}")
+    with metric_col2:
+        st.metric("Endurance Score", f"{pred.predicted_endurance_score:.0f}/100")
+    with metric_col3:
+        st.metric("Performance Rating", f"{pred.predicted_rating:.0f}/100")
+
+    st.markdown(f"**Trend:** {pred.trend} (based on last {pred.history_points} sessions)")
+
+    try:
+        df = pd.DataFrame(pred.forecast)
+        df = df.rename(columns={
+            'training_load': 'Training Load',
+            'pred_speed_rpm': 'Speed (reps/min)',
+            'pred_endurance_score': 'Endurance',
+            'pred_rating': 'Rating'
+        })
+        st.dataframe(df, use_container_width=True, hide_index=True)
+    except Exception:
+        pass
 
 def initialize_database():
     """Initialize database connection"""
@@ -221,9 +280,12 @@ def main_app():
         if st.button("🏃 Jump Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'jump' else "secondary"):
             st.session_state.exercise_type = 'jump'
             st.session_state.session_id = None
+            st.session_state.session_start_time = None
             st.session_state.detector = None
             st.session_state.squat_detector = None
             st.session_state.pushup_detector = None
+            st.session_state.performance_prediction = None
+            st.session_state.performance_prediction_exercise = None
             st.session_state.session_stats = {
                 'total_jumps': 0,
                 'total_squats': 0,
@@ -239,9 +301,12 @@ def main_app():
         if st.button("🦵 Squat Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'squat' else "secondary"):
             st.session_state.exercise_type = 'squat'
             st.session_state.session_id = None
+            st.session_state.session_start_time = None
             st.session_state.detector = None
             st.session_state.squat_detector = None
             st.session_state.pushup_detector = None
+            st.session_state.performance_prediction = None
+            st.session_state.performance_prediction_exercise = None
             st.session_state.session_stats = {
                 'total_jumps': 0,
                 'total_squats': 0,
@@ -257,9 +322,12 @@ def main_app():
         if st.button("💪 Push-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'pushup' else "secondary"):
             st.session_state.exercise_type = 'pushup'
             st.session_state.session_id = None
+            st.session_state.session_start_time = None
             st.session_state.detector = None
             st.session_state.squat_detector = None
             st.session_state.pushup_detector = None
+            st.session_state.performance_prediction = None
+            st.session_state.performance_prediction_exercise = None
             st.session_state.session_stats = {
                 'total_jumps': 0,
                 'total_squats': 0,
@@ -306,9 +374,6 @@ def main_app():
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
-        
-        # Add recommendations summary to sidebar
-        # add_recommendations_to_sidebar()
     
     # Main content area - route based on exercise type
     if st.session_state.exercise_type == 'squat':
@@ -317,6 +382,440 @@ def main_app():
         main_app_pushup(db)
     else:
         main_app_jump(db)
+
+def show_db_update_notification(exercise_type, count, success=True):
+    """Show database update notification"""
+    if success:
+        st.session_state[f'last_db_update_{exercise_type}'] = f"✅ {exercise_type.capitalize()} #{count} saved to database!"
+        st.session_state[f'last_db_update_time_{exercise_type}'] = datetime.now().strftime("%H:%M:%S")
+    else:
+        st.session_state[f'last_db_update_{exercise_type}'] = f"❌ Database update failed!"
+        st.session_state[f'last_db_update_time_{exercise_type}'] = datetime.now().strftime("%H:%M:%S")
+
+def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="medium"):
+    """Process uploaded video file"""
+    # Initialize detector
+    if st.session_state.detector is None:
+        st.session_state.detector = JumpDetector(calibration_frames=calibration_frames, jump_height=jump_height)
+    else:
+        # Reset detector for new video with new calibration frames
+        st.session_state.detector.reset()
+        st.session_state.detector.CALIBRATION_FRAMES = calibration_frames
+        st.session_state.detector.jump_height = jump_height
+    
+    # Create session if not exists
+    if st.session_state.session_id is None:
+        session_id = db.create_session(st.session_state.user_id)
+        if session_id:
+            st.session_state.session_id = session_id
+            st.session_state.session_start_time = datetime.now()
+        else:
+            st.error("Failed to create session")
+            return
+    
+    # Process video directly from uploaded file bytes using tempfile (auto-deletes)
+    import tempfile
+    import os
+    
+    temp_path = None
+    try:
+        # Create temporary file that auto-deletes when closed
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
+            temp_file.write(uploaded_file.read())
+            temp_path = temp_file.name
+        
+        # Process video
+        cap = cv2.VideoCapture(temp_path)
+        if not cap.isOpened():
+            st.error("Failed to open video file. Please check the file format.")
+            os.unlink(temp_path)
+            return
+        
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0:
+            fps = 30
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if total_frames <= 0:
+            st.error("Could not determine video frame count. Please check the video file.")
+            cap.release()
+            os.unlink(temp_path)
+            return
+        
+        # Create side-by-side layout: 60% video, 40% posture predictor
+        video_col, posture_col = st.columns([0.6, 0.4])
+        
+        frame_placeholder = video_col.empty()
+        progress_bar = st.progress(0)
+        stop_button_placeholder = st.empty()
+        posture_placeholder = posture_col.empty()
+        
+        frame_count = 0
+        should_stop = False
+        
+        st.info(f"📹 Processing video: {total_frames} frames at {fps:.1f} FPS")
+        
+        # Process all frames
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            
+            # Check for stop button
+            if stop_button_placeholder.button("⏹️ Stop Processing", key=f"stop_{frame_count}"):
+                should_stop = True
+                break
+            
+            frame_count += 1
+            
+            # Process frame
+            annotated_frame, status = st.session_state.detector.process_frame(frame)
+            
+            # Update session stats
+            if status['jump_count'] > st.session_state.session_stats['total_jumps']:
+                # New jump detected
+                jump_data = {
+                    'jump_number': status['jump_count'],
+                    'points': status['points'],
+                    'bad_moves': status['bad_moves'],
+                    'warnings': ', '.join(status['warnings']) if status['warnings'] else 'None',
+                    'has_danger': status['danger_detected']
+                }
+                
+                # Record to database
+                db.record_jump(
+                    st.session_state.session_id,
+                    jump_data['jump_number'],
+                    jump_data['points'],
+                    jump_data['bad_moves'],
+                    jump_data['warnings'],
+                    jump_data['has_danger']
+                )
+                
+                # Update stats
+                st.session_state.session_stats['total_jumps'] = status['jump_count']
+                st.session_state.session_stats['total_points'] += jump_data['points']
+                st.session_state.session_stats['total_bad_moves'] += jump_data['bad_moves']
+                st.session_state.session_stats['jumps_data'].append(jump_data)
+                
+                update_performance_prediction(db, 'jump', st.session_state.session_stats['total_jumps'])
+                
+                # Update session totals in database in real-time
+                db.update_session_totals(
+                    st.session_state.session_id,
+                    st.session_state.session_stats['total_jumps'],
+                    st.session_state.session_stats['total_points'],
+                    st.session_state.session_stats['total_bad_moves'],
+                    0,  # total_squats for jump session
+                    0   # total_pushups for jump session
+                )
+                # Small delay to ensure database commit completes
+                time.sleep(0.01)
+            
+            # Draw UI overlay (simplified - no warnings on video)
+            h, w = annotated_frame.shape[:2]
+            overlay = annotated_frame.copy()
+            cv2.rectangle(overlay, (0, 0), (300, 100), (0, 0, 0), -1)
+            cv2.addWeighted(overlay, 0.7, annotated_frame, 0.3, 0, annotated_frame)
+            
+            cv2.putText(annotated_frame, f"Jumps: {status['jump_count']}", (15, 35),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+            cv2.putText(annotated_frame, f"Status: {status['status_text']}", (15, 65),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # Convert to RGB for display
+            annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+            frame_placeholder.image(annotated_frame_rgb, channels="RGB")
+            
+            # Posture Predictor Box (40% width) - Static layout with fixed placeholders
+            with posture_placeholder.container():
+                st.markdown("### 🎯 Posture Predictor")
+                
+                # Fixed info section
+                info_col1, info_col2 = st.columns(2)
+                with info_col1:
+                    st.markdown(f"**Frame:** {frame_count}/{total_frames}")
+                with info_col2:
+                    st.markdown(f"**Status:** {status['status_text']}")
+                
+                st.markdown("---")
+                
+                # Fixed warnings section - always present, updates in place
+                st.markdown("#### ⚠️ Current Warnings:")
+                warnings_text = ""
+                if status['warnings']:
+                    for warning in status['warnings']:
+                        warnings_text += f"🔴 {warning}\n\n"
+                else:
+                    warnings_text = "✅ No warnings"
+                st.markdown(warnings_text)
+                
+                st.markdown("---")
+                
+                # Fixed bad moves section - always present
+                st.markdown("#### ❌ Bad Moves:")
+                st.markdown(f"**{status['bad_moves']}**")
+                
+                st.markdown("---")
+                
+                # Fixed danger section - always present
+                st.markdown("#### 🚨 Danger Status:")
+                if status['danger_detected']:
+                    st.error("**DANGER DETECTED!**")
+                else:
+                    st.success("**No Danger**")
+                
+                st.markdown("---")
+                
+                # Database Update Status
+                if f'last_db_update_jump' in st.session_state:
+                    update_msg = st.session_state[f'last_db_update_jump']
+                    update_time = st.session_state.get(f'last_db_update_time_jump', '')
+                    st.markdown(f"#### 💾 Database Status:")
+                    if '✅' in update_msg:
+                        st.success(f"{update_msg} ({update_time})")
+                    else:
+                        st.error(f"{update_msg} ({update_time})")
+                    st.markdown("---")
+                
+                # Fixed jump statistics - always present
+                st.markdown("#### 📊 Jump Stats:")
+                stats_col1, stats_col2 = st.columns(2)
+                with stats_col1:
+                    st.metric("Total Jumps", status['jump_count'])
+                with stats_col2:
+                    points = status.get('points', 0)
+                    st.metric("Points", points)
+                
+                st.markdown("---")
+                render_performance_prediction_panel('jump')
+            
+            # Progress
+            progress = frame_count / total_frames
+            progress_bar.progress(progress)
+        
+        cap.release()
+        
+        # End session
+        if st.session_state.session_id:
+            db.end_session(
+                st.session_state.session_id,
+                st.session_state.session_stats['total_jumps'],
+                st.session_state.session_stats['total_points'],
+                st.session_state.session_stats['total_bad_moves'],
+                0,  # total_squats for jump session
+                0   # total_pushups for jump session
+            )
+            st.session_state.session_start_time = None
+        
+        if should_stop:
+            st.warning("⏹️ Processing stopped by user")
+        else:
+            st.success(f"✅ Processing complete! Processed {frame_count} frames. Total jumps: {st.session_state.session_stats['total_jumps']}")
+        
+    except Exception as e:
+        st.error(f"Error processing video: {str(e)}")
+    finally:
+        # Clean up temp file immediately
+        if temp_path and os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except:
+                pass
+
+def process_live_camera(db, calibration_frames=100, jump_height="medium"):
+    """Process live camera feed using OpenCV VideoCapture - continuous processing like video
+    Uses the same configuration as video processing: knee/elbow trigger points, yellow line at center
+    """
+    # Initialize detector (same configuration as video processing)
+    if st.session_state.detector is None:
+        st.session_state.detector = JumpDetector(calibration_frames=calibration_frames, jump_height=jump_height)
+    else:
+        # Reset detector for new session (same as video processing)
+        st.session_state.detector.reset()
+        st.session_state.detector.CALIBRATION_FRAMES = calibration_frames
+        st.session_state.detector.jump_height = jump_height
+    
+    # Create session if not exists
+    if st.session_state.session_id is None:
+        session_id = db.create_session(st.session_state.user_id)
+        if session_id:
+            st.session_state.session_id = session_id
+            st.session_state.session_start_time = datetime.now()
+        else:
+            st.error("Failed to create session")
+            return
+    
+    # Initialize camera
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        st.error("❌ Could not open camera. Please check if camera is available and not being used by another application.")
+        return
+    
+    # Create side-by-side layout: 60% video, 40% posture predictor
+    video_col, posture_col = st.columns([0.6, 0.4])
+    
+    frame_placeholder = video_col.empty()
+    stop_button_placeholder = st.empty()
+    posture_placeholder = posture_col.empty()
+    
+    st.info("📹 Live camera processing started! Position yourself in front of the camera. Click 'Start Processing' to begin live jump detection!")
+    
+    try:
+        frame_count = 0
+        should_stop = False
+        
+        # Continuous processing loop (same as video processing)
+        while True:
+            # Check for stop button
+            if stop_button_placeholder.button("⏹️ Stop Processing", key=f"stop_camera_{frame_count}"):
+                should_stop = True
+                break
+            
+            ret, frame = cap.read()
+            if not ret:
+                st.warning("⚠️ Failed to read from camera. Check camera connection.")
+                break
+            
+            frame_count += 1
+            
+            # Process frame
+            annotated_frame, status = st.session_state.detector.process_frame(frame)
+            
+            # Update session stats
+            if status['jump_count'] > st.session_state.session_stats['total_jumps']:
+                # New jump detected
+                jump_data = {
+                    'jump_number': status['jump_count'],
+                    'points': status['points'],
+                    'bad_moves': status['bad_moves'],
+                    'warnings': ', '.join(status['warnings']) if status['warnings'] else 'None',
+                    'has_danger': status['danger_detected']
+                }
+                
+                # Record to database
+                db.record_jump(
+                    st.session_state.session_id,
+                    jump_data['jump_number'],
+                    jump_data['points'],
+                    jump_data['bad_moves'],
+                    jump_data['warnings'],
+                    jump_data['has_danger']
+                )
+                
+                # Update stats
+                st.session_state.session_stats['total_jumps'] = status['jump_count']
+                st.session_state.session_stats['total_points'] += jump_data['points']
+                st.session_state.session_stats['total_bad_moves'] += jump_data['bad_moves']
+                st.session_state.session_stats['jumps_data'].append(jump_data)
+                
+                update_performance_prediction(db, 'jump', st.session_state.session_stats['total_jumps'])
+                
+                # Update session totals in database in real-time
+                db.update_session_totals(
+                    st.session_state.session_id,
+                    st.session_state.session_stats['total_jumps'],
+                    st.session_state.session_stats['total_points'],
+                    st.session_state.session_stats['total_bad_moves'],
+                    0,  # total_squats for jump session
+                    0   # total_pushups for jump session
+                )
+                # Small delay to ensure database commit completes
+                time.sleep(0.01)
+            
+            # Draw UI overlay (simplified - no warnings on video)
+            h, w = annotated_frame.shape[:2]
+            overlay = annotated_frame.copy()
+            cv2.rectangle(overlay, (0, 0), (300, 100), (0, 0, 0), -1)
+            cv2.addWeighted(overlay, 0.7, annotated_frame, 0.3, 0, annotated_frame)
+            
+            cv2.putText(annotated_frame, f"Jumps: {status['jump_count']}", (15, 35),
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+            cv2.putText(annotated_frame, f"Status: {status['status_text']}", (15, 65),
+                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            
+            # Convert to RGB for display
+            annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+            frame_placeholder.image(annotated_frame_rgb, channels="RGB")
+            
+            # Posture Predictor Box (40% width) - Static layout with fixed placeholders
+            with posture_placeholder.container():
+                st.markdown("### 🎯 Posture Predictor")
+                
+                # Fixed info section
+                info_col1, info_col2 = st.columns(2)
+                with info_col1:
+                    st.markdown(f"**Frame:** {frame_count}")
+                with info_col2:
+                    st.markdown(f"**Status:** {status['status_text']}")
+                
+                st.markdown("---")
+                
+                # Fixed warnings section - always present, updates in place
+                st.markdown("#### ⚠️ Current Warnings:")
+                warnings_text = ""
+                if status['warnings']:
+                    for warning in status['warnings']:
+                        warnings_text += f"🔴 {warning}\n\n"
+                else:
+                    warnings_text = "✅ No warnings"
+                st.markdown(warnings_text)
+                
+                st.markdown("---")
+                
+                # Fixed bad moves section - always present
+                st.markdown("#### ❌ Bad Moves:")
+                st.markdown(f"**{status['bad_moves']}**")
+                
+                st.markdown("---")
+                
+                # Fixed danger section - always present
+                st.markdown("#### 🚨 Danger Status:")
+                if status['danger_detected']:
+                    st.error("**DANGER DETECTED!**")
+                else:
+                    st.success("**No Danger**")
+                
+                st.markdown("---")
+                
+                # Fixed jump statistics - always present
+                st.markdown("#### 📊 Jump Stats:")
+                stats_col1, stats_col2 = st.columns(2)
+                with stats_col1:
+                    st.metric("Total Jumps", status['jump_count'])
+                with stats_col2:
+                    points = status.get('points', 0)
+                    st.metric("Points", points)
+                
+                st.markdown("---")
+                render_performance_prediction_panel('jump')
+            
+            # Small delay for processing (adjust for performance)
+            time.sleep(0.033)  # ~30 FPS
+    
+    except Exception as e:
+        st.error(f"Error processing camera: {str(e)}")
+    finally:
+        cap.release()
+        
+        # End session
+        if st.session_state.session_id:
+            db.end_session(
+                st.session_state.session_id,
+                st.session_state.session_stats['total_jumps'],
+                st.session_state.session_stats['total_points'],
+                st.session_state.session_stats['total_bad_moves'],
+                0,  # total_squats for jump session
+                0   # total_pushups for jump session
+            )
+            st.session_state.session_start_time = None
+        
+        if should_stop:
+            st.warning("⏹️ Processing stopped by user")
+        else:
+            st.success(f"✅ Processing complete! Processed {frame_count} frames. Total jumps: {st.session_state.session_stats['total_jumps']}")
+        
+        st.rerun()
 
 def main_app_jump(db):
     """Main jump training interface"""
@@ -405,438 +904,6 @@ def main_app_jump(db):
             jump_height_value = "low" if "Low" in jump_height else ("high" if "High" in jump_height else "medium")
             process_live_camera(db, calibration_frames, jump_height_value)
 
-def show_db_update_notification(exercise_type, count, success=True):
-    """Show database update notification"""
-    if success:
-        st.session_state[f'last_db_update_{exercise_type}'] = f"✅ {exercise_type.capitalize()} #{count} saved to database!"
-        st.session_state[f'last_db_update_time_{exercise_type}'] = datetime.now().strftime("%H:%M:%S")
-    else:
-        st.session_state[f'last_db_update_{exercise_type}'] = f"❌ Database update failed!"
-        st.session_state[f'last_db_update_time_{exercise_type}'] = datetime.now().strftime("%H:%M:%S")
-
-def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="medium"):
-    """Process uploaded video file"""
-    # Initialize detector
-    if st.session_state.detector is None:
-        st.session_state.detector = JumpDetector(calibration_frames=calibration_frames, jump_height=jump_height)
-    else:
-        # Reset detector for new video with new calibration frames
-        st.session_state.detector.reset()
-        st.session_state.detector.CALIBRATION_FRAMES = calibration_frames
-        st.session_state.detector.jump_height = jump_height
-    
-    # Create session if not exists
-    if st.session_state.session_id is None:
-        session_id = db.create_session(st.session_state.user_id)
-        if session_id:
-            st.session_state.session_id = session_id
-        else:
-            st.error("Failed to create session")
-            return
-    
-    # Process video directly from uploaded file bytes using tempfile (auto-deletes)
-    import tempfile
-    import os
-    
-    temp_path = None
-    try:
-        # Create temporary file that auto-deletes when closed
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
-            temp_file.write(uploaded_file.read())
-            temp_path = temp_file.name
-        
-        # Process video
-        cap = cv2.VideoCapture(temp_path)
-        if not cap.isOpened():
-            st.error("Failed to open video file. Please check the file format.")
-            os.unlink(temp_path)  # Clean up immediately
-            return
-        
-        fps = cap.get(cv2.CAP_PROP_FPS)
-        if fps <= 0:
-            fps = 30  # Default FPS if not available
-        
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        if total_frames <= 0:
-            st.error("Could not determine video frame count. Please check the video file.")
-            cap.release()
-            os.unlink(temp_path)  # Clean up immediately
-            return
-        
-        # Create side-by-side layout: 60% video, 40% posture predictor
-        video_col, posture_col = st.columns([0.6, 0.4])
-        
-        frame_placeholder = video_col.empty()
-        progress_bar = st.progress(0)
-        stop_button_placeholder = st.empty()
-        posture_placeholder = posture_col.empty()
-        
-        frame_count = 0
-        should_stop = False
-        
-        st.info(f"📹 Processing video: {total_frames} frames at {fps:.1f} FPS")
-        
-        # Process all frames
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            # Check for stop button
-            if stop_button_placeholder.button("⏹️ Stop Processing", key=f"stop_{frame_count}"):
-                should_stop = True
-                break
-            
-            frame_count += 1
-            
-            # Process frame
-            annotated_frame, status = st.session_state.detector.process_frame(frame)
-            
-            # Update session stats
-            if status['jump_count'] > st.session_state.session_stats['total_jumps']:
-                # New jump detected
-                jump_data = {
-                    'jump_number': status['jump_count'],
-                    'points': status['points'],
-                    'bad_moves': status['bad_moves'],
-                    'warnings': ', '.join(status['warnings']) if status['warnings'] else 'None',
-                    'has_danger': status['danger_detected']
-                }
-                
-                # Record to database
-                db.record_jump(
-                    st.session_state.session_id,
-                    jump_data['jump_number'],
-                    jump_data['points'],
-                    jump_data['bad_moves'],
-                    jump_data['warnings'],
-                    jump_data['has_danger']
-                )
-                
-                # Update stats
-                st.session_state.session_stats['total_jumps'] = status['jump_count']
-                st.session_state.session_stats['total_points'] += jump_data['points']
-                st.session_state.session_stats['total_bad_moves'] += jump_data['bad_moves']
-                st.session_state.session_stats['jumps_data'].append(jump_data)
-                
-                # Update session totals in database in real-time
-                db.update_session_totals(
-                    st.session_state.session_id,
-                    st.session_state.session_stats['total_jumps'],
-                    st.session_state.session_stats['total_points'],
-                    st.session_state.session_stats['total_bad_moves'],
-                    0,  # total_squats for jump session
-                    0   # total_pushups for jump session
-                )
-                # Small delay to ensure database commit completes
-                time.sleep(0.01)
-            
-            # Draw UI overlay (simplified - no warnings on video)
-            h, w = annotated_frame.shape[:2]
-            overlay = annotated_frame.copy()
-            cv2.rectangle(overlay, (0, 0), (300, 100), (0, 0, 0), -1)
-            cv2.addWeighted(overlay, 0.7, annotated_frame, 0.3, 0, annotated_frame)
-            
-            cv2.putText(annotated_frame, f"Jumps: {status['jump_count']}", (15, 35),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
-            cv2.putText(annotated_frame, f"Status: {status['status_text']}", (15, 65),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            
-            # Convert to RGB for display
-            annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-            frame_placeholder.image(annotated_frame_rgb, channels="RGB")
-            
-            # Posture Predictor Box (40% width) - Static layout with fixed placeholders
-            with posture_placeholder.container():
-                st.markdown("### 🎯 Posture Predictor")
-                
-                # Fixed info section
-                info_col1, info_col2 = st.columns(2)
-                with info_col1:
-                    st.markdown(f"**Frame:** {frame_count}/{total_frames}")
-                with info_col2:
-                    st.markdown(f"**Status:** {status['status_text']}")
-                
-                st.markdown("---")
-                
-                # Fixed warnings section - always present, updates in place
-                st.markdown("#### ⚠️ Current Warnings:")
-                warnings_text = ""
-                if status['warnings']:
-                    for warning in status['warnings']:
-                        warnings_text += f"🔴 {warning}\n\n"
-                else:
-                    warnings_text = "✅ No warnings"
-                st.markdown(warnings_text)
-                
-                st.markdown("---")
-                
-                # Fixed bad moves section - always present
-                st.markdown("#### ❌ Bad Moves:")
-                st.markdown(f"**{status['bad_moves']}**")
-                
-                st.markdown("---")
-                
-                # Fixed danger section - always present
-                st.markdown("#### 🚨 Danger Status:")
-                if status['danger_detected']:
-                    st.error("**DANGER DETECTED!**")
-                else:
-                    st.success("**No Danger**")
-                
-                st.markdown("---")
-                
-                # Database Update Status
-                if f'last_db_update_jump' in st.session_state:
-                    update_msg = st.session_state[f'last_db_update_jump']
-                    update_time = st.session_state.get(f'last_db_update_time_jump', '')
-                    st.markdown(f"#### 💾 Database Status:")
-                    if '✅' in update_msg:
-                        st.success(f"{update_msg} ({update_time})")
-                    else:
-                        st.error(f"{update_msg} ({update_time})")
-                    st.markdown("---")
-                
-                # Fixed jump statistics - always present
-                st.markdown("#### 📊 Jump Stats:")
-                stats_col1, stats_col2 = st.columns(2)
-                with stats_col1:
-                    st.metric("Total Jumps", status['jump_count'])
-                with stats_col2:
-                    points = status.get('points', 0)
-                    st.metric("Points", points)
-            
-            # Progress
-            progress = frame_count / total_frames
-            progress_bar.progress(progress)
-        
-        cap.release()
-        
-        # End session
-        if st.session_state.session_id:
-            db.end_session(
-                st.session_state.session_id,
-                st.session_state.session_stats['total_jumps'],
-                st.session_state.session_stats['total_points'],
-                st.session_state.session_stats['total_bad_moves'],
-                0,  # total_squats for jump session
-                0   # total_pushups for jump session
-            )
-            
-            # Generate new recommendations based on session performance
-            try:
-                recommendation_engine = RecommendationEngine()
-                new_recommendations = recommendation_engine.generate_recommendations(
-                    st.session_state.user_id, 
-                    st.session_state.session_id
-                )
-                if new_recommendations:
-                    st.info(f"🎯 Generated {len(new_recommendations)} new training recommendations based on your session!")
-            except Exception as e:
-                st.warning(f"Could not generate recommendations: {e}")
-        
-        if should_stop:
-            st.warning("⏹️ Processing stopped by user")
-        else:
-            st.success(f"✅ Processing complete! Processed {frame_count} frames. Total jumps: {st.session_state.session_stats['total_jumps']}")
-        
-    except Exception as e:
-        st.error(f"Error processing video: {str(e)}")
-    finally:
-        # Clean up temp file immediately
-        if temp_path and os.path.exists(temp_path):
-            try:
-                os.unlink(temp_path)
-            except:
-                pass
-
-def process_live_camera(db, calibration_frames=100, jump_height="medium"):
-    """Process live camera feed using OpenCV VideoCapture - continuous processing like video
-    Uses the same configuration as video processing: knee/elbow trigger points, yellow line at center
-    """
-    # Initialize detector (same configuration as video processing)
-    if st.session_state.detector is None:
-        st.session_state.detector = JumpDetector(calibration_frames=calibration_frames, jump_height=jump_height)
-    else:
-        # Reset detector for new session (same as video processing)
-        st.session_state.detector.reset()
-        st.session_state.detector.CALIBRATION_FRAMES = calibration_frames
-        st.session_state.detector.jump_height = jump_height
-    
-    # Create session if not exists
-    if st.session_state.session_id is None:
-        session_id = db.create_session(st.session_state.user_id)
-        if session_id:
-            st.session_state.session_id = session_id
-        else:
-            st.error("Failed to create session")
-            return
-    
-    # Initialize camera
-    cap = cv2.VideoCapture(0)
-    if not cap.isOpened():
-        st.error("❌ Could not open camera. Please check if camera is available and not being used by another application.")
-        return
-    
-    # Create side-by-side layout: 60% video, 40% posture predictor
-    video_col, posture_col = st.columns([0.6, 0.4])
-    
-    frame_placeholder = video_col.empty()
-    stop_button_placeholder = st.empty()
-    posture_placeholder = posture_col.empty()
-    
-    st.info("📹 Live camera processing started! Position yourself and start jumping.")
-    
-    try:
-        frame_count = 0
-        should_stop = False
-        
-        # Continuous processing loop (same as video processing)
-        while True:
-            # Check for stop button
-            if stop_button_placeholder.button("⏹️ Stop Processing", key=f"stop_camera_{frame_count}"):
-                should_stop = True
-                break
-            
-            ret, frame = cap.read()
-            if not ret:
-                st.warning("⚠️ Failed to read from camera. Check camera connection.")
-                break
-            
-            frame_count += 1
-            
-            # Process frame
-            annotated_frame, status = st.session_state.detector.process_frame(frame)
-            
-            # Update session stats
-            if status['jump_count'] > st.session_state.session_stats['total_jumps']:
-                # New jump detected
-                jump_data = {
-                    'jump_number': status['jump_count'],
-                    'points': status['points'],
-                    'bad_moves': status['bad_moves'],
-                    'warnings': ', '.join(status['warnings']) if status['warnings'] else 'None',
-                    'has_danger': status['danger_detected']
-                }
-                
-                # Record to database
-                db.record_jump(
-                    st.session_state.session_id,
-                    jump_data['jump_number'],
-                    jump_data['points'],
-                    jump_data['bad_moves'],
-                    jump_data['warnings'],
-                    jump_data['has_danger']
-                )
-                
-                # Update stats
-                st.session_state.session_stats['total_jumps'] = status['jump_count']
-                st.session_state.session_stats['total_points'] += jump_data['points']
-                st.session_state.session_stats['total_bad_moves'] += jump_data['bad_moves']
-                st.session_state.session_stats['jumps_data'].append(jump_data)
-                
-                # Update session totals in database in real-time
-                db.update_session_totals(
-                    st.session_state.session_id,
-                    st.session_state.session_stats['total_jumps'],
-                    st.session_state.session_stats['total_points'],
-                    st.session_state.session_stats['total_bad_moves'],
-                    0,  # total_squats for jump session
-                    0   # total_pushups for jump session
-                )
-                # Small delay to ensure database commit completes
-                time.sleep(0.01)
-            
-            # Draw UI overlay (simplified - no warnings on video)
-            h, w = annotated_frame.shape[:2]
-            overlay = annotated_frame.copy()
-            cv2.rectangle(overlay, (0, 0), (300, 100), (0, 0, 0), -1)
-            cv2.addWeighted(overlay, 0.7, annotated_frame, 0.3, 0, annotated_frame)
-            
-            cv2.putText(annotated_frame, f"Jumps: {status['jump_count']}", (15, 35),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
-            cv2.putText(annotated_frame, f"Status: {status['status_text']}", (15, 65),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-            
-            # Convert to RGB for display
-            annotated_frame_rgb = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
-            frame_placeholder.image(annotated_frame_rgb, channels="RGB")
-            
-            # Posture Predictor Box (40% width) - Static layout with fixed placeholders
-            with posture_placeholder.container():
-                st.markdown("### 🎯 Posture Predictor")
-                
-                # Fixed info section
-                info_col1, info_col2 = st.columns(2)
-                with info_col1:
-                    st.markdown(f"**Frame:** {frame_count}")
-                with info_col2:
-                    st.markdown(f"**Status:** {status['status_text']}")
-                
-                st.markdown("---")
-                
-                # Fixed warnings section - always present, updates in place
-                st.markdown("#### ⚠️ Current Warnings:")
-                warnings_text = ""
-                if status['warnings']:
-                    for warning in status['warnings']:
-                        warnings_text += f"🔴 {warning}\n\n"
-                else:
-                    warnings_text = "✅ No warnings"
-                st.markdown(warnings_text)
-                
-                st.markdown("---")
-                
-                # Fixed bad moves section - always present
-                st.markdown("#### ❌ Bad Moves:")
-                st.markdown(f"**{status['bad_moves']}**")
-                
-                st.markdown("---")
-                
-                # Fixed danger section - always present
-                st.markdown("#### 🚨 Danger Status:")
-                if status['danger_detected']:
-                    st.error("**DANGER DETECTED!**")
-                else:
-                    st.success("**No Danger**")
-                
-                st.markdown("---")
-                
-                # Fixed jump statistics - always present
-                st.markdown("#### 📊 Jump Stats:")
-                stats_col1, stats_col2 = st.columns(2)
-                with stats_col1:
-                    st.metric("Total Jumps", status['jump_count'])
-                with stats_col2:
-                    points = status.get('points', 0)
-                    st.metric("Points", points)
-            
-            # Small delay for processing (adjust for performance)
-            time.sleep(0.033)  # ~30 FPS
-    
-    except Exception as e:
-        st.error(f"Error processing camera: {str(e)}")
-    finally:
-        cap.release()
-        
-        # End session
-        if st.session_state.session_id:
-            db.end_session(
-                st.session_state.session_id,
-                st.session_state.session_stats['total_jumps'],
-                st.session_state.session_stats['total_points'],
-                st.session_state.session_stats['total_bad_moves'],
-                0,  # total_squats for jump session
-                0   # total_pushups for jump session
-            )
-        
-        if should_stop:
-            st.warning("⏹️ Processing stopped by user")
-        else:
-            st.success(f"✅ Processing complete! Processed {frame_count} frames. Total jumps: {st.session_state.session_stats['total_jumps']}")
-        
-        st.rerun()
-
 def main_app_squat(db):
     """Main squat training interface"""
     st.title("🦵 Squat Training Session")
@@ -920,6 +987,7 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
         session_id = db.create_session(st.session_state.user_id)
         if session_id:
             st.session_state.session_id = session_id
+            st.session_state.session_start_time = datetime.now()
         else:
             st.error("Failed to create session")
             return
@@ -1009,6 +1077,8 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
                 st.session_state.session_stats['total_bad_moves'] += squat_data['bad_moves']
                 st.session_state.session_stats['squats_data'].append(squat_data)
                 
+                update_performance_prediction(db, 'squat', st.session_state.session_stats['total_squats'])
+                
                 # Update session totals in database in real-time
                 db.update_session_totals(
                     st.session_state.session_id,
@@ -1090,6 +1160,9 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
                 with stats_col2:
                     points = status.get('points', 0)
                     st.metric("Points", points)
+                
+                st.markdown("---")
+                render_performance_prediction_panel('squat')
             
             # Progress
             progress = frame_count / total_frames
@@ -1107,6 +1180,7 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
                 st.session_state.session_stats.get('total_squats', 0),
                 0  # total_pushups for squat session
             )
+            st.session_state.session_start_time = None
         
         if should_stop:
             st.warning("⏹️ Processing stopped by user")
@@ -1138,6 +1212,7 @@ def process_squat_live_camera(db, calibration_frames=100):
         session_id = db.create_session(st.session_state.user_id)
         if session_id:
             st.session_state.session_id = session_id
+            st.session_state.session_start_time = datetime.now()
         else:
             st.error("Failed to create session")
             return
@@ -1204,6 +1279,8 @@ def process_squat_live_camera(db, calibration_frames=100):
                 st.session_state.session_stats['total_points'] += squat_data['points']
                 st.session_state.session_stats['total_bad_moves'] += squat_data['bad_moves']
                 st.session_state.session_stats['squats_data'].append(squat_data)
+                
+                update_performance_prediction(db, 'squat', st.session_state.session_stats['total_squats'])
                 
                 # Update session totals in database in real-time
                 db.update_session_totals(
@@ -1286,6 +1363,9 @@ def process_squat_live_camera(db, calibration_frames=100):
                 with stats_col2:
                     points = status.get('points', 0)
                     st.metric("Points", points)
+                
+                st.markdown("---")
+                render_performance_prediction_panel('squat')
             
             # Small delay for processing
             time.sleep(0.033)  # ~30 FPS
@@ -1305,6 +1385,7 @@ def process_squat_live_camera(db, calibration_frames=100):
                 st.session_state.session_stats.get('total_squats', 0),
                 0  # total_pushups for squat session
             )
+            st.session_state.session_start_time = None
         
         if should_stop:
             st.warning("⏹️ Processing stopped by user")
@@ -1396,6 +1477,7 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
         session_id = db.create_session(st.session_state.user_id)
         if session_id:
             st.session_state.session_id = session_id
+            st.session_state.session_start_time = datetime.now()
         else:
             st.error("Failed to create session")
             return
@@ -1486,6 +1568,8 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
                     st.session_state.session_stats['total_bad_moves'] += pushup_data['bad_moves']
                     st.session_state.session_stats['pushups_data'].append(pushup_data)
                     
+                    update_performance_prediction(db, 'pushup', st.session_state.session_stats['total_pushups'])
+                    
                     # Update session totals in database in real-time
                     db.update_session_totals(
                         st.session_state.session_id,
@@ -1572,6 +1656,9 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
                 with stats_col2:
                     points = status.get('points', 0)
                     st.metric("Points", points)
+                
+                st.markdown("---")
+                render_performance_prediction_panel('pushup')
             
             # Progress
             progress = frame_count / total_frames
@@ -1589,6 +1676,7 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
                 0,  # total_squats for push-up session
                 st.session_state.session_stats.get('total_pushups', 0)
             )
+            st.session_state.session_start_time = None
         
         if should_stop:
             st.warning("⏹️ Processing stopped by user")
@@ -1620,6 +1708,7 @@ def process_pushup_live_camera(db, calibration_frames=100):
         session_id = db.create_session(st.session_state.user_id)
         if session_id:
             st.session_state.session_id = session_id
+            st.session_state.session_start_time = datetime.now()
         else:
             st.error("Failed to create session")
             return
@@ -1687,6 +1776,8 @@ def process_pushup_live_camera(db, calibration_frames=100):
                     st.session_state.session_stats['total_points'] += pushup_data['points']
                     st.session_state.session_stats['total_bad_moves'] += pushup_data['bad_moves']
                     st.session_state.session_stats['pushups_data'].append(pushup_data)
+                    
+                    update_performance_prediction(db, 'pushup', st.session_state.session_stats['total_pushups'])
                     
                     # Update session totals in database in real-time
                     db.update_session_totals(
@@ -1774,6 +1865,9 @@ def process_pushup_live_camera(db, calibration_frames=100):
                 with stats_col2:
                     points = status.get('points', 0)
                     st.metric("Points", points)
+                
+                st.markdown("---")
+                render_performance_prediction_panel('pushup')
             
             # Small delay for processing
             time.sleep(0.033)  # ~30 FPS
@@ -1793,6 +1887,7 @@ def process_pushup_live_camera(db, calibration_frames=100):
                 0,  # total_squats for push-up session
                 st.session_state.session_stats.get('total_pushups', 0)
             )
+            st.session_state.session_start_time = None
         
         if should_stop:
             st.warning("⏹️ Processing stopped by user")
