@@ -2058,6 +2058,23 @@ def dashboard_page():
         st.markdown("#### 📅 Daily Trends (Last 30 Days)")
         df_daily = pd.DataFrame(daily_stats)
         df_daily['date'] = pd.to_datetime(df_daily['date'])
+        df_daily = df_daily.sort_values('date')
+        for _col in ['jumps', 'squats', 'pushups', 'points', 'participants', 'sessions']:
+            if _col in df_daily.columns:
+                df_daily[_col] = pd.to_numeric(df_daily[_col], errors='coerce').fillna(0)
+        date_end = pd.Timestamp.now().normalize()
+        date_start = date_end - pd.Timedelta(days=29)
+        all_dates = pd.date_range(start=date_start, end=date_end, freq='D')
+        df_daily = (
+            df_daily
+            .set_index('date')
+            .reindex(all_dates)
+            .rename_axis('date')
+            .reset_index()
+        )
+        for _col in ['jumps', 'squats', 'pushups', 'points', 'participants', 'sessions']:
+            if _col in df_daily.columns:
+                df_daily[_col] = df_daily[_col].fillna(0)
         
         # Line Chart - Daily Exercises
         col1, col2 = st.columns(2)
