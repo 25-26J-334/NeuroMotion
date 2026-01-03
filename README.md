@@ -63,7 +63,7 @@ To **design and develop an AI-powered system** that enhances athlete performance
 - Technique correction  
 - Personalized training recommendations  
 
-### 3.2 Sub Objectives (by Component)
+### 3.2 Sub Objectives
 
 1. **Data Pipeline & Integration System**  
    - Design and implement a robust data acquisition and preprocessing pipeline for sports video and related data.
@@ -125,3 +125,70 @@ To **design and develop an AI-powered system** that enhances athlete performance
                     │ -  Coaches                       │
                     │ -  Sports institutions           │
                     └────────────────────────────────┘
+```
+
+---
+
+### 4.2 Data Flow
+
+1. **Raw video data is ingested from cameras, uploaded files, or public datasets.**
+   
+2. **The Data Pipeline component preprocesses videos:**
+   - Standardizes formats & resolutions
+   - Extracts frames
+   - Aligns multi-camera angles
+   - Annotates with metadata (player, context, session info)
+     
+3. **The Computer Vision component:**
+   - Runs pose estimation (MediaPipe/OpenPose, etc.)
+   - Extracts skeletal keypoints and calculates joint angles
+   - Identifies deviations from optimal technique
+     
+4. **ML models:**
+   - Use historical and current features to predict performance, fatigue, injury risk, and trends.
+
+5. **The Dashboard & Recommender:**
+   - Visualizes metrics
+   - Shows real-time corrective feedback
+   - Suggests personalized training plans (e.g., using RL)
+   - Logs and tracks progress over time
+
+---
+
+## 5. Modules and Responsibilities
+
+### 5.1 Component 1 – Data Pipeline & Integration System
+
+**Member: Y. Manulakshan (IT22283962)**
+   - Multi-source video acquisition (live feeds, uploads, datasets)
+   - Video preprocessing and normalization (resolution, frame rate, noise removal)
+   - Frame extraction and multi-view synchronization
+   - Metadata annotation (athlete, session, context)
+   - Data storage and API integration for downstream modules
+
+### 5.2 Component 2 – Computer Vision for Form & Technique Analysis
+
+**Member: G. Mathumitha (IT21379338)**
+   - Pose estimation using MediaPipe / OpenPose
+   - Keypoint extraction and joint angle computation
+   - Technique error detection (e.g., incorrect posture, misaligned joints)
+   - Real-time feedback generation (e.g., “Increase knee drive”, “Correct hip alignment”)
+   - Integration of visual overlays and metrics for the dashboard
+
+### 5.3 Component 3 – AI Models for Performance Prediction
+
+**Member: L. M. Sylvester (IT22311368)**
+   - Feature engineering from pose data and training logs
+   - Regression models for performance forecasting
+   - Classification models for injury/fatigue risk
+   - Anomaly detection for unusual patterns
+   - Model evaluation, tuning, and performance reporting
+
+### 5.4 Component 4 – Personalized Training & Visualization System
+
+**Member: G. Jude Jawakker (IT22330864)**
+   - Web-based dashboard for performance visualization
+   - Real-time feedback display and alerting
+   - Adaptive training recommender (e.g., using Reinforcement Learning or decision trees)
+   - Progress tracking and historical analytics
+   - Chatbot integration for question–answer style interactions
