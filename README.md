@@ -81,7 +81,7 @@ To **design and develop an AI-powered system** that enhances athlete performance
 
 ## 4. System Architecture
 
-### 4.1 High-Level Architecture Diagram (Textual / ASCII)
+### 4.1 High-Level Architecture Diagram
 
 ```text
                          ┌────────────────────────────────────┐
