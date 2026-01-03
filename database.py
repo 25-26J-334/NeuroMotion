@@ -318,6 +318,34 @@ class Database:
             }
         return None
     
+    def get_recent_sessions(self, user_id: int, exercise_type: str = 'all', limit: int = 20) -> List[Dict]:
+        if exercise_type == 'jump':
+            where_clause = "s.total_jumps > 0"
+        elif exercise_type == 'squat':
+            where_clause = "s.total_squats > 0"
+        elif exercise_type == 'pushup':
+            where_clause = "s.total_pushups > 0"
+        else:
+            where_clause = "(s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0)"
+
+        query = f"""
+        SELECT 
+            s.session_id,
+            s.user_id,
+            s.start_time,
+            s.end_time,
+            s.total_jumps,
+            s.total_squats,
+            s.total_pushups,
+            s.total_points,
+            s.total_bad_moves
+        FROM sessions s
+        WHERE s.user_id = ? AND s.end_time IS NOT NULL AND {where_clause}
+        ORDER BY s.end_time DESC
+        LIMIT ?
+        """
+        return self.execute_query(query, (user_id, limit)) or []
+    
     def get_overall_stats(self) -> Dict:
         """Get overall statistics for dashboard"""
         stats = {}
