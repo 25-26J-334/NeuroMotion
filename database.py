@@ -430,6 +430,26 @@ class Database:
         ORDER BY date ASC
         """
         return self.execute_query(query, (cutoff_date,)) or []
+
+    def get_hourly_exercise_stats(self, hours: int = 24) -> List[Dict]:
+        """Get hourly statistics for each exercise type"""
+        cutoff_date = (datetime.now() - timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')
+        query = """
+        SELECT 
+            strftime('%Y-%m-%d %H:00:00', s.start_time) as hour,
+            SUM(s.total_jumps) as jumps,
+            SUM(s.total_squats) as squats,
+            SUM(s.total_pushups) as pushups,
+            SUM(s.total_points) as points,
+            COUNT(DISTINCT s.user_id) as participants,
+            COUNT(s.session_id) as sessions
+        FROM sessions s
+        WHERE (s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0)
+        AND s.start_time >= ?
+        GROUP BY strftime('%Y-%m-%d %H', s.start_time)
+        ORDER BY hour ASC
+        """
+        return self.execute_query(query, (cutoff_date,)) or []
     
     def get_top_performers_by_exercise(self, exercise_type: str, limit: int = 5) -> List[Dict]:
         """Get top performers for specific exercise type"""

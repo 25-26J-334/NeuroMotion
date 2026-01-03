@@ -1957,7 +1957,7 @@ def dashboard_page():
         return
     
     stats = db.get_overall_stats()
-    daily_stats = db.get_daily_exercise_stats(days=30)
+    hourly_stats = db.get_hourly_exercise_stats(hours=24)
     exercise_dist = db.get_exercise_distribution()
     
     # Overall metrics - Row 1
@@ -1997,11 +1997,21 @@ def dashboard_page():
     with col1:
         st.markdown("#### Exercise Distribution")
         if exercise_dist['jumps'] + exercise_dist['squats'] + exercise_dist['pushups'] > 0:
+            df_pie = pd.DataFrame({
+                'exercise': ['Jumps', 'Squats', 'Push-ups'],
+                'value': [exercise_dist['jumps'], exercise_dist['squats'], exercise_dist['pushups']]
+            })
             fig_pie = px.pie(
-                values=[exercise_dist['jumps'], exercise_dist['squats'], exercise_dist['pushups']],
-                names=['Jumps', 'Squats', 'Push-ups'],
+                df_pie,
+                values='value',
+                names='exercise',
+                color='exercise',
                 title="Exercise Type Distribution",
-                color_discrete_sequence=px.colors.qualitative.Set3
+                color_discrete_map={
+                    'Jumps': '#1f77b4',
+                    'Squats': '#ff7f0e',
+                    'Push-ups': '#2ca02c'
+                }
             )
             st.plotly_chart(fig_pie, use_container_width=True, key="dashboard_pie_chart")
         else:
@@ -2053,58 +2063,58 @@ def dashboard_page():
         else:
             st.info("No performer data available yet")
     
-    # Daily Statistics Charts
-    if daily_stats:
-        st.markdown("#### 📅 Daily Trends (Last 30 Days)")
-        df_daily = pd.DataFrame(daily_stats)
-        df_daily['date'] = pd.to_datetime(df_daily['date'])
-        df_daily = df_daily.sort_values('date')
+    # Time-based Statistics Charts
+    if hourly_stats:
+        st.markdown("#### 🕒 Time Trends (Last 24 Hours)")
+        df_time = pd.DataFrame(hourly_stats)
+        df_time['hour'] = pd.to_datetime(df_time['hour'])
+        df_time = df_time.sort_values('hour')
         for _col in ['jumps', 'squats', 'pushups', 'points', 'participants', 'sessions']:
-            if _col in df_daily.columns:
-                df_daily[_col] = pd.to_numeric(df_daily[_col], errors='coerce').fillna(0)
-        date_end = pd.Timestamp.now().normalize()
-        date_start = date_end - pd.Timedelta(days=29)
-        all_dates = pd.date_range(start=date_start, end=date_end, freq='D')
-        df_daily = (
-            df_daily
-            .set_index('date')
-            .reindex(all_dates)
-            .rename_axis('date')
+            if _col in df_time.columns:
+                df_time[_col] = pd.to_numeric(df_time[_col], errors='coerce').fillna(0)
+        hour_end = pd.Timestamp.now().floor('H')
+        hour_start = hour_end - pd.Timedelta(hours=23)
+        all_hours = pd.date_range(start=hour_start, end=hour_end, freq='H')
+        df_time = (
+            df_time
+            .set_index('hour')
+            .reindex(all_hours)
+            .rename_axis('hour')
             .reset_index()
         )
         for _col in ['jumps', 'squats', 'pushups', 'points', 'participants', 'sessions']:
-            if _col in df_daily.columns:
-                df_daily[_col] = df_daily[_col].fillna(0)
+            if _col in df_time.columns:
+                df_time[_col] = df_time[_col].fillna(0)
         
-        # Line Chart - Daily Exercises
+        # Line Chart - Exercises Over Time
         col1, col2 = st.columns(2)
         
         with col1:
             fig_line = go.Figure()
             fig_line.add_trace(go.Scatter(
-                x=df_daily['date'],
-                y=df_daily['jumps'],
+                x=df_time['hour'],
+                y=df_time['jumps'],
                 mode='lines+markers',
                 name='Jumps',
                 line=dict(color='#1f77b4', width=2)
             ))
             fig_line.add_trace(go.Scatter(
-                x=df_daily['date'],
-                y=df_daily['squats'],
+                x=df_time['hour'],
+                y=df_time['squats'],
                 mode='lines+markers',
                 name='Squats',
                 line=dict(color='#ff7f0e', width=2)
             ))
             fig_line.add_trace(go.Scatter(
-                x=df_daily['date'],
-                y=df_daily['pushups'],
+                x=df_time['hour'],
+                y=df_time['pushups'],
                 mode='lines+markers',
                 name='Push-ups',
                 line=dict(color='#2ca02c', width=2)
             ))
             fig_line.update_layout(
-                title="Daily Exercise Count Over Time",
-                xaxis_title="Date",
+                title="Exercise Count Over Time (Hourly)",
+                xaxis_title="Time",
                 yaxis_title="Count",
                 hovermode='x unified'
             )
@@ -2112,10 +2122,10 @@ def dashboard_page():
         
         with col2:
             fig_points = px.line(
-                df_daily, 
-                x='date', 
+                df_time, 
+                x='hour', 
                 y='points',
-                title="Daily Points Over Time",
+                title="Points Over Time (Hourly)",
                 markers=True
             )
             fig_points.update_traces(line_color='#d62728', line_width=2)
@@ -2126,27 +2136,27 @@ def dashboard_page():
         
         with col3:
             fig_sessions = px.bar(
-                df_daily,
-                x='date',
+                df_time,
+                x='hour',
                 y='sessions',
-                title="Daily Sessions",
-                labels={'sessions': 'Number of Sessions', 'date': 'Date'}
+                title="Sessions Over Time (Hourly)",
+                labels={'sessions': 'Number of Sessions', 'hour': 'Time'}
             )
             fig_sessions.update_traces(marker_color='#9467bd')
             st.plotly_chart(fig_sessions, use_container_width=True, key="dashboard_sessions_chart")
         
         with col4:
             fig_participants = px.line(
-                df_daily,
-                x='date',
+                df_time,
+                x='hour',
                 y='participants',
-                title="Daily Active Participants",
+                title="Active Participants Over Time (Hourly)",
                 markers=True
             )
             fig_participants.update_traces(line_color='#8c564b', line_width=2)
             st.plotly_chart(fig_participants, use_container_width=True, key="dashboard_participants_chart")
     else:
-        st.info("No daily statistics available yet. Start training to see trends!")
+        st.info("No time-based statistics available yet. Start training to see trends!")
     
     # User stats if logged in
     if st.session_state.user_id:
