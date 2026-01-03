@@ -2,6 +2,7 @@
 
 **Project ID:** 25-26J-334  
 **Team:** Manulakshan_IT22283962 | Mathumitha_IT21379338 | Sylvester_IT22311368 | Jude Jawakker_IT22330864
+**Git repository:** https://github.com/25-26J-334/NeuroMotion.git
 **Course:** IT4010 – Research Project (2025 July)  
 **Specialization:** Information Technology (IT)  
 **Research Group:** Software Systems & Technologies (SST)  
