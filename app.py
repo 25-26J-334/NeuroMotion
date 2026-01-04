@@ -196,6 +196,15 @@ def render_performance_prediction_panel(exercise_type: str):
     if pred.history_points >= 3:
         st.markdown("#### 😴 Fatigue Detection")
         
+        # Debug info
+        st.write(f"Debug: Exercise type = {pred_ex}")
+        st.write(f"Debug: Has trend = {hasattr(pred, 'trend')}")
+        st.write(f"Debug: Has trend_strength = {hasattr(pred, 'trend_strength')}")
+        if hasattr(pred, 'trend'):
+            st.write(f"Debug: Trend = {pred.trend}")
+        if hasattr(pred, 'trend_strength'):
+            st.write(f"Debug: Trend strength = {pred.trend_strength}")
+        
         # Calculate fatigue metrics
         fatigue_score = calculate_fatigue_score(pred)
         fatigue_level = get_fatigue_level(fatigue_score)
@@ -236,31 +245,6 @@ def render_performance_prediction_panel(exercise_type: str):
         st.markdown("---")
     
     st.markdown("---")
-    
-    # Error Metrics Section
-    if pred.history_points >= 2:
-        st.markdown("#### 📊 Model Accuracy Metrics")
-        error_col1, error_col2, error_col3 = st.columns(3)
-        
-        with error_col1:
-            st.markdown("**Speed Prediction**")
-            st.markdown(f"RMSE: {pred.rmse_speed:.2f}")
-            st.markdown(f"MAE: {pred.mae_speed:.2f}")
-            st.markdown(f"R²: {pred.r2_speed:.3f}")
-            
-        with error_col2:
-            st.markdown("**Endurance Prediction**")
-            st.markdown(f"RMSE: {pred.rmse_endurance:.2f}")
-            st.markdown(f"MAE: {pred.mae_endurance:.2f}")
-            st.markdown(f"R²: {pred.r2_endurance:.3f}")
-            
-        with error_col3:
-            st.markdown("**Rating Prediction**")
-            st.markdown(f"RMSE: {pred.rmse_rating:.2f}")
-            st.markdown(f"MAE: {pred.mae_rating:.2f}")
-            st.markdown(f"R²: {pred.r2_rating:.3f}")
-        
-        st.markdown("---")
     
     # Performance History Chart
     if pred.performance_history:
@@ -935,6 +919,8 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
         
         # Display performance analysis after processing is complete
         st.markdown("---")
+        # Update prediction with final session data
+        update_performance_prediction(db, 'jump', st.session_state.session_stats['total_jumps'])
         render_performance_prediction_panel('jump')
         
     except Exception as e:
@@ -1140,6 +1126,8 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
         
         # Display performance analysis after processing is complete
         st.markdown("---")
+        # Update prediction with final session data
+        update_performance_prediction(db, 'jump', st.session_state.session_stats['total_jumps'])
         render_performance_prediction_panel('jump')
         
         st.rerun()
@@ -1515,6 +1503,8 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
         
         # Display performance analysis after processing is complete
         st.markdown("---")
+        # Update prediction with final session data
+        update_performance_prediction(db, 'squat', st.session_state.session_stats['total_squats'])
         render_performance_prediction_panel('squat')
         
     except Exception as e:
@@ -1723,6 +1713,8 @@ def process_squat_live_camera(db, calibration_frames=100):
         
         # Display performance analysis after processing is complete
         st.markdown("---")
+        # Update prediction with final session data
+        update_performance_prediction(db, 'squat', st.session_state.session_stats['total_squats'])
         render_performance_prediction_panel('squat')
         
         st.rerun()
@@ -2017,6 +2009,8 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
         
         # Display performance analysis after processing is complete
         st.markdown("---")
+        # Update prediction with final session data
+        update_performance_prediction(db, 'pushup', st.session_state.session_stats['total_pushups'])
         render_performance_prediction_panel('pushup')
         
     except Exception as e:
@@ -2231,6 +2225,8 @@ def process_pushup_live_camera(db, calibration_frames=100):
         
         # Display performance analysis after processing is complete
         st.markdown("---")
+        # Update prediction with final session data
+        update_performance_prediction(db, 'pushup', st.session_state.session_stats['total_pushups'])
         render_performance_prediction_panel('pushup')
         
         st.rerun()
