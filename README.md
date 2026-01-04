@@ -274,45 +274,45 @@ To **design and develop an AI-powered system** that enhances athlete performance
 
 ### 8.2 Backend Setup
 
-# Clone repository
+### Clone repository
 git clone https://github.com/25-26J-334/NeuroMotion.git
 cd <your-repo>
 
-# Create and activate virtual environment
+### Create and activate virtual environment
 python -m venv venv
-# Windows:
+### Windows:
 venv\Scripts\activate
-# Linux / macOS:
+### Linux / macOS:
 source venv/bin/activate
 
-# Install Python dependencies
+### Install Python dependencies
 pip install -r requirements.txt
 
-# Initialize SQLite database
+### Initialize SQLite database
 python setup_database.py
 
-# Run the Streamlit app
+### Run the Streamlit app
 streamlit run app.py
 
 The app will open in your browser at http://localhost:8501
 
 ### 8.3 Frontend Setup
 
-# From project root
+### From project root
 cd frontend
 
-# Install frontend dependencies
+### Install frontend dependencies
 npm install
-# or: yarn install
+### or: yarn install
 
-# Copy environment config
+### Copy environment config
 cp .env.example .env.local
-# Set API URL, e.g.:
-# REACT_APP_API_BASE_URL=http://localhost:5000
+### Set API URL, e.g.:
+### REACT_APP_API_BASE_URL=http://localhost:5000
 
-# Run development server
+### Run development server
 npm start
-# App runs on http://localhost:3000
+### App runs on http://localhost:3000
 
 ### 8.4 Database Setup
 
@@ -381,24 +381,24 @@ root/
 
 ### 10.2 Workflow
 
-# Pull latest changes from production branch
+### Pull latest changes from production branch
 git checkout develop
 git pull origin develop
 
-# Create a feature branch
+### Create a feature branch
 git checkout -b feature/ui-dashboard
 
-# Work on code, then stage and commit
+### Work on code, then stage and commit
 git add .
 git commit -m "feat(ui): redesign dashboard with new charts"
 
-# Push branch
+### Push branch
 git push origin feature/ui-dashboard
 
-# Open a Pull Request from this branch into 'develop'
-# After review and approval, merge the PR
+### Open a Pull Request from this branch into 'develop'
+### After review and approval, merge the PR
 
-# Update local develop branch after merge
+### Update local develop branch after merge
 git checkout develop
 git pull origin develop
 
@@ -422,25 +422,25 @@ git pull origin develop
 
 ### 10.4 Viewing History for Evaluation
 
-# Show graphical history of all branches
+### Show graphical history of all branches
 git log --oneline --graph --all --decorate
 
-# Show commits per contributor
+### Show commits per contributor
 git shortlog -sn --all
 
-# Show merge commits (indicates collaboration)
+### Show merge commits 
 git log --merges --oneline
 
-# Show branch activity
+### Show branch activity
 git branch -a
 
-# Show recent commits on develop
+### Show recent commits on develop
 git log --oneline -10 develop
 
-# Show commits by specific author
+### Show commits by specific author
 git log --oneline --author="username"
 
-# Show commits on a feature branch
+### Show commits on a feature branch
 git log --oneline feature/ui
 
 ---
@@ -450,81 +450,92 @@ git log --oneline feature/ui
 ### 11.1 Functional Success
 
 - Real-time pose extraction and technique analysis using MediaPipe via webcam/video
+  
 - Accurate detection of technique errors:
-- Knee valgus (knees caving in)
-- Excessive forward lean
-- Knees over toes
+   - Knee valgus (knees caving in)
+   - Excessive forward lean
+   - Knees over toes
+     
 - Meaningful performance tracking:
-- Jump counting with points system (10 points per jump, -2 per bad move)
-- Session summaries and leaderboard rankings
+   - Jump counting with points system (10 points per jump, -2 per bad move)
+   - Session summaries and leaderboard rankings
+     
 - Working dashboard that visualizes:
-- Real-time jump counts and points
-- Posture warnings during exercise
-- Leaderboard and user statistics
-- Historical session data
+   - Real-time jump counts and points
+   - Posture warnings during exercise
+   - Leaderboard and user statistics
+   - Historical session data
 
 ### 11.2 Technical Success
 
 - Clean, modular code structure:
-- Separate modules: app.py, database.py, jump_detector.py, recommendation_engine.py
-- Clear separation of UI, data, and detection logic
+   - Separate modules: app.py, database.py, jump_detector.py, recommendation_engine.py
+   - Clear separation of UI, data, and detection logic
+
 - Proper use of Git:
-- Feature branches: feature/ui, feature/graph, feature/training_plans, etc.
-- Production code in develop branch
-- Merge commits showing collaboration
+   - Feature branches: feature/ui, feature/graph, feature/training_plans, etc.
+   - Production code in develop branch
+   - Merge commits showing collaboration
+
 - Working build and run instructions:
-- Clear README.md with setup steps
-- requirements.txt with all dependencies
-- One-command startup: streamlit run app.py
+   - Clear README.md with setup steps
+   - requirements.txt with all dependencies
+   - One-command startup: streamlit run app.py
+
 - Documented database schema:
-- SQLite schema in database_setup_sqlite.sql
-- Clear table structure for users, sessions, jumps, squats, pushups
+   - SQLite schema in database_setup_sqlite.sql
+   - Clear table structure for users, sessions, jumps, squats, pushups
 
 ### 11.3 User/Stakeholder Success
 
 - Athlete/coach feedback:
-- Clear real-time posture warnings during training
-- Understandable scoring system and leaderboard
-- Actionable recommendations from the recommendation engine
+   - Clear real-time posture warnings during training
+   - Understandable scoring system and leaderboard
+   - Actionable recommendations from the recommendation engine
+
 - Demonstrable value:
-- Identifies posture issues not obvious to the naked eye
-- Tracks progress over multiple sessions
-- Provides competitive motivation through leaderboard
-- Offers personalized training recommendations
+   - Identifies posture issues not obvious to the naked eye
+   - Tracks progress over multiple sessions
+   - Provides competitive motivation through leaderboard
+   - Offers personalized training recommendations
 
 ---
 
 ## 12. Data, Privacy, and Ethics 
 
-- Data Sources
-- Public datasets: Use datasets like SportsPose, AthletePose3D, UCF101, PoseTrack, COCO - Keypoints for initial development and benchmarking
-- Custom recordings: Obtain informed consent from participants before recording
-- Sample data: Your project includes input_jump_video.mp4 as reference/test footage
-- Privacy Measures
-- Anonymization: No names or IDs stored in jump/session data; consider face blurring in video processing
-- Secure storage: SQLite database stored locally with restricted access to the project team
-- Data retention: Clear policy for how long session videos and data are stored
-- Ethics and Disclaimers
-- Non-medical: Clearly state that posture analysis and recommendations are supportive insights, not medical diagnoses
-- Accuracy limits: Document the limitations of MediaPipe-based pose estimation
-- User consent: Include consent prompts when enabling camera/video recording
+- **Data Sources**
+   - **Public datasets:** Use datasets like SportsPose, AthletePose3D, UCF101, PoseTrack, COCO - Keypoints for initial development and benchmarking
+   - **Custom recordings:** Obtain informed consent from participants before recording
+   - **Sample data:** Your project includes input_jump_video.mp4 as reference/test footage
+  
+- **Privacy Measures**
+   - **Anonymization:** No names or IDs stored in jump/session data; consider face blurring in video processing
+   - **Secure storage:** SQLite database stored locally with restricted access to the project team
+   - **Data retention:** Clear policy for how long session videos and data are stored
+     
+- **Ethics and Disclaimers**
+   - **Non-medical:** Clearly state that posture analysis and recommendations are supportive insights, not medical diagnoses
+   - **Accuracy limits:** Document the limitations of MediaPipe-based pose estimation
+   - **User consent:** Include consent prompts when enabling camera/video recording
 
 ---
 
 ## 13. Future Work 
 
 - Feature Extensions
-- Multi-sport support: Add specialized technique rules for squats, push-ups, and other exercises
-- Advanced biomechanics: Incorporate more parameters like force estimation, ground contact time, movement velocity
-- Enhanced recommendations: Improve the recommendation engine with machine learning-based personalization
+   - Multi-sport support: Add specialized technique rules for squats, push-ups, and other exercises
+   - Advanced biomechanics: Incorporate more parameters like force estimation, ground contact time, movement velocity
+   - Enhanced recommendations: Improve the recommendation engine with machine learning-based personalization
+
 - Platform Integration
-- External platforms: Integrate with training apps, athlete management systems, or wearable devices
-- Cloud deployment: Deploy to cloud environment (AWS, Azure, GCP) for remote access and scalability
-- Mobile app: Develop a companion mobile application for on-the-go training
+   - External platforms: Integrate with training apps, athlete management systems, or wearable devices
+   - Cloud deployment: Deploy to cloud environment (AWS, Azure, GCP) for remote access and scalability
+   -  Mobile app: Develop a companion mobile application for on-the-go training
+
 - Technical Improvements
-- Real-time enhancements: Optimize for lower latency real-time processing
-- Multi-user support: Add proper authentication and multi-user profiles
-- Advanced analytics: Implement more sophisticated statistical analysis and trend detection
+   - Real-time enhancements: Optimize for lower latency real-time processing
+   - Multi-user support: Add proper authentication and multi-user profiles
+   - Advanced analytics: Implement more sophisticated statistical analysis and trend detection
 
 ---
 
@@ -534,6 +545,7 @@ git log --oneline feature/ui
 - **G. Mathumitha** – Computer Vision for Form & Technique
 - **L. M. Sylvester** – AI Models for Performance Prediction
 - **G. Jude Jawakker** – Personalized Training & Visualization
+
 
 - **Prof. Samantha Rajapaksha** – Sri Lanka Institute of Information Technology (SLIIT)
 
