@@ -547,7 +547,7 @@ git log --oneline feature/ui
 - **G. Jude Jawakker** – Personalized Training & Visualization
 
 
-- */*Prof. Samantha Rajapaksha*/* – Sri Lanka Institute of Information Technology (SLIIT)
+- **Prof. Samantha Rajapaksha* – Sri Lanka Institute of Information Technology (SLIIT)
 
 ---
 
