@@ -20,6 +20,7 @@ from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
 from performance_prediction import compute_performance_prediction, PredictionResult
 from performance_page import performance_page
+from posture_library import posture_library_page, show_posture_tips_during_training
 
 # Page configuration
 st.set_page_config(
@@ -30,6 +31,7 @@ st.set_page_config(
 )
 
 # Initialize session state
+
 if 'user_id' not in st.session_state:
     st.session_state.user_id = None
 if 'user_name' not in st.session_state:
@@ -364,8 +366,12 @@ def main_app():
             st.session_state.page = 'dashboard'
             st.rerun()
         
-        if st.button("🏆 Leaderboard", use_container_width=True):
-            st.session_state.page = 'leaderboard'
+        if st.button("📈 Performance", use_container_width=True):
+            st.session_state.page = 'performance'
+            st.rerun()
+        
+        if st.button("🧘‍♂️ Posture Library", use_container_width=True):
+            st.session_state.page = 'posture_library'
             st.rerun()
         
         if st.button("🎯 TrainPlans", use_container_width=True):
@@ -607,6 +613,9 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
                 
                 st.markdown("---")
                 render_performance_prediction_panel('jump')
+                
+                st.markdown("---")
+                show_posture_tips_during_training('jump')
             
             # Progress
             progress = frame_count / total_frames
@@ -807,6 +816,9 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
                 
                 st.markdown("---")
                 render_performance_prediction_panel('jump')
+                
+                st.markdown("---")
+                show_posture_tips_during_training('jump')
             
             # Small delay for processing (adjust for performance)
             time.sleep(0.033)  # ~30 FPS
@@ -1181,6 +1193,9 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
                 
                 st.markdown("---")
                 render_performance_prediction_panel('squat')
+                
+                st.markdown("---")
+                show_posture_tips_during_training('squat')
             
             # Progress
             progress = frame_count / total_frames
@@ -1384,6 +1399,9 @@ def process_squat_live_camera(db, calibration_frames=100):
                 
                 st.markdown("---")
                 render_performance_prediction_panel('squat')
+                
+                st.markdown("---")
+                show_posture_tips_during_training('squat')
             
             # Small delay for processing
             time.sleep(0.033)  # ~30 FPS
@@ -1677,6 +1695,9 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
                 
                 st.markdown("---")
                 render_performance_prediction_panel('pushup')
+                
+                st.markdown("---")
+                show_posture_tips_during_training('pushup')
             
             # Progress
             progress = frame_count / total_frames
@@ -1886,6 +1907,9 @@ def process_pushup_live_camera(db, calibration_frames=100):
                 
                 st.markdown("---")
                 render_performance_prediction_panel('pushup')
+                
+                st.markdown("---")
+                show_posture_tips_during_training('pushup')
             
             # Small delay for processing
             time.sleep(0.033)  # ~30 FPS
@@ -2416,6 +2440,10 @@ else:
         leaderboard_page()
     elif st.session_state.page == 'dashboard':
         dashboard_page()
+    elif st.session_state.page == 'performance':
+        performance_page()
+    elif st.session_state.page == 'posture_library':
+        posture_library_page()
     elif st.session_state.page == 'trainbot':
         trainbot_page()
     elif st.session_state.page == 'recommendations':
