@@ -18,7 +18,8 @@ from squat_detector import SquatDetector
 from pushup_detector import PushupDetector
 from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
-from performance_prediction import compute_performance_prediction
+from performance_prediction import compute_performance_prediction, PredictionResult
+from performance_page import performance_page
 
 # Page configuration
 st.set_page_config(
@@ -70,9 +71,13 @@ if 'performance_prediction' not in st.session_state:
     st.session_state.performance_prediction = None
 if 'performance_prediction_exercise' not in st.session_state:
     st.session_state.performance_prediction_exercise = None
+if 'prediction_mode_enabled' not in st.session_state:
+    st.session_state.prediction_mode_enabled = True
 
 def update_performance_prediction(db, exercise_type: str, current_count: int):
     if not st.session_state.user_id:
+        return
+    if not st.session_state.get('prediction_mode_enabled', True):
         return
     if st.session_state.session_start_time is None:
         st.session_state.session_start_time = datetime.now()
@@ -94,6 +99,8 @@ def update_performance_prediction(db, exercise_type: str, current_count: int):
     st.session_state.performance_prediction_exercise = exercise_type
 
 def render_performance_prediction_panel(exercise_type: str):
+    if not st.session_state.get('prediction_mode_enabled', True):
+        return
     st.markdown("### 🔮 Performance Prediction")
     pred = st.session_state.get('performance_prediction')
     pred_ex = st.session_state.get('performance_prediction_exercise')
@@ -339,6 +346,17 @@ def main_app():
                 'pushups_data': []
             }
             st.rerun()
+        
+        st.markdown("---")
+        
+        # Prediction Mode Toggle
+        st.markdown("### ⚙️ Settings")
+        prediction_mode = st.toggle(
+            "🔮 Performance Prediction",
+            value=st.session_state.get('prediction_mode_enabled', True),
+            help="Enable/disable performance predictions during training"
+        )
+        st.session_state.prediction_mode_enabled = prediction_mode
         
         st.markdown("---")
         
