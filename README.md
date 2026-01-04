@@ -194,9 +194,12 @@ To **design and develop an AI-powered system** that enhances athlete performance
    - Progress tracking and historical analytics
    - Chatbot integration for question–answer style interactions
 
-   6. Technology Stack (Used in this project)
-6.1 Backend
-Language
+---
+
+## 6. Technology Stack
+
+### 6.1 Backend Language
+
 Python 3.8+ (as per README.md)
 Web Framework
 Streamlit (the app is run using streamlit run app.py)
