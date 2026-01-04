@@ -18,6 +18,63 @@ from squat_detector import SquatDetector
 from pushup_detector import PushupDetector
 from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
+
+# Fatigue Detection Helper Functions
+def calculate_fatigue_score(pred):
+    """Calculate fatigue score based on performance trends and patterns"""
+    if pred.history_points < 3:
+        return 0.0
+    
+    fatigue_score = 0.0
+    
+    # Factor 1: Trend analysis (declining trend increases fatigue)
+    if hasattr(pred, 'trend') and hasattr(pred, 'trend_strength'):
+        if pred.trend == 'decreasing':
+            fatigue_score += 30 * pred.trend_strength
+        elif pred.trend == 'stable':
+            fatigue_score += 10 * pred.trend_strength
+    
+    # Factor 2: Performance variance based on prediction confidence
+    if hasattr(pred, 'r2_speed') and hasattr(pred, 'r2_endurance'):
+        # Lower R² values indicate more variance/less consistency
+        avg_r2 = (pred.r2_speed + pred.r2_endurance) / 2
+        variance_factor = max(0, (1 - avg_r2) * 25)
+        fatigue_score += variance_factor
+    
+    # Factor 3: Error rates (higher errors may indicate fatigue)
+    if hasattr(pred, 'rmse_speed') and hasattr(pred, 'rmse_endurance'):
+        # Normalize error rates (assuming typical ranges)
+        error_factor = min((pred.rmse_speed + pred.rmse_endurance) / 20, 20)
+        fatigue_score += error_factor
+    
+    # Factor 4: Performance drop based on trend strength and direction
+    if hasattr(pred, 'trend_strength') and hasattr(pred, 'trend'):
+        if pred.trend == 'decreasing':
+            drop_factor = pred.trend_strength * 30
+            fatigue_score += drop_factor
+    
+    return min(fatigue_score, 100.0)
+
+def get_fatigue_level(fatigue_score):
+    """Get fatigue level based on score"""
+    if fatigue_score >= 70:
+        return "High"
+    elif fatigue_score >= 40:
+        return "Moderate"
+    elif fatigue_score >= 20:
+        return "Low"
+    else:
+        return "Minimal"
+
+def get_fatigue_color(fatigue_level):
+    """Get color for fatigue level"""
+    colors = {
+        "Minimal": "#00FF00",    # Green
+        "Low": "#FFFF00",        # Yellow  
+        "Moderate": "#FFA500",    # Orange
+        "High": "#FF0000"         # Red
+    }
+    return colors.get(fatigue_level, "#FFFFFF")
 from performance_prediction import compute_performance_prediction
 import os
 
@@ -135,6 +192,51 @@ def render_performance_prediction_panel(exercise_type: str):
     
     st.markdown("---")
     
+    # Fatigue Detection Section
+    if pred.history_points >= 3:
+        st.markdown("#### 😴 Fatigue Detection")
+        
+        # Calculate fatigue metrics
+        fatigue_score = calculate_fatigue_score(pred)
+        fatigue_level = get_fatigue_level(fatigue_score)
+        fatigue_color = get_fatigue_color(fatigue_level)
+        
+        # Display fatigue status
+        fatigue_col1, fatigue_col2, fatigue_col3 = st.columns(3)
+        with fatigue_col1:
+            st.markdown(f"**Fatigue Level:**")
+            st.markdown(f"<span style='color: {fatigue_color}; font-size: 1.2em; font-weight: bold;'>{fatigue_level}</span>", 
+                       unsafe_allow_html=True)
+        
+        with fatigue_col2:
+            st.markdown(f"**Fatigue Score:**")
+            st.markdown(f"<span style='color: {fatigue_color}; font-size: 1.2em; font-weight: bold;'>{fatigue_score:.1f}/100</span>", 
+                       unsafe_allow_html=True)
+        
+        with fatigue_col3:
+            st.markdown(f"**Recommendation:**")
+            if fatigue_score >= 70:
+                st.markdown("🛑 **Take a Break**", unsafe_allow_html=True)
+            elif fatigue_score >= 40:
+                st.markdown("⚠️ **Slow Down**", unsafe_allow_html=True)
+            else:
+                st.markdown("✅ **Keep Going**", unsafe_allow_html=True)
+        
+        # Fatigue trend analysis
+        if hasattr(pred, 'trend') and pred.trend == 'decreasing' and pred.trend_strength > 0.3:
+            st.markdown(f"📉 **Performance Decline:** {pred.trend_strength:.1%} decreasing trend detected")
+        
+        # Personalized recommendations
+        if fatigue_score >= 70:
+            st.warning("🧘 **Recommended:** Take a 5-10 minute break. Hydrate and stretch before continuing.")
+            st.info("💡 **Tip:** Fatigue can increase injury risk and reduce form quality.")
+        elif fatigue_score >= 40:
+            st.info("💡 **Suggestion:** Consider reducing intensity or taking shorter breaks between sets.")
+        
+        st.markdown("---")
+    
+    st.markdown("---")
+    
     # Error Metrics Section
     if pred.history_points >= 2:
         st.markdown("#### 📊 Model Accuracy Metrics")
@@ -238,7 +340,7 @@ def render_performance_prediction_panel(exercise_type: str):
             template="plotly_dark"
         )
         
-        st.plotly_chart(fig, use_container_width=True, key="performance_trend_chart")
+        st.plotly_chart(fig, use_container_width=True, key=f"performance_trend_chart_{exercise_type}_{st.session_state.get('session_id', 'default')}_{hash(str(time.time()))}")
         
         st.markdown("---")
     
@@ -307,7 +409,7 @@ def render_performance_prediction_panel(exercise_type: str):
             template="plotly_dark"
         )
         
-        st.plotly_chart(fig_forecast, use_container_width=True, key="performance_forecast_chart")
+        st.plotly_chart(fig_forecast, use_container_width=True, key=f"performance_forecast_chart_{exercise_type}_{st.session_state.get('session_id', 'default')}_{hash(str(time.time()))}")
         
     except Exception as e:
         st.error(f"Error displaying forecast: {str(e)}")
@@ -807,7 +909,6 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
                     st.metric("Points", points)
                 
                 st.markdown("---")
-                render_performance_prediction_panel('jump')
             
             # Progress
             progress = frame_count / total_frames
@@ -831,6 +932,10 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
             st.warning("⏹️ Processing stopped by user")
         else:
             st.success(f"✅ Processing complete! Processed {frame_count} frames. Total jumps: {st.session_state.session_stats['total_jumps']}")
+        
+        # Display performance analysis after processing is complete
+        st.markdown("---")
+        render_performance_prediction_panel('jump')
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -1007,7 +1112,6 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
                     st.metric("Points", points)
                 
                 st.markdown("---")
-                render_performance_prediction_panel('jump')
             
             # Small delay for processing (adjust for performance)
             time.sleep(0.033)  # ~30 FPS
@@ -1033,6 +1137,10 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
             st.warning("⏹️ Processing stopped by user")
         else:
             st.success(f"✅ Processing complete! Processed {frame_count} frames. Total jumps: {st.session_state.session_stats['total_jumps']}")
+        
+        # Display performance analysis after processing is complete
+        st.markdown("---")
+        render_performance_prediction_panel('jump')
         
         st.rerun()
 
@@ -1381,7 +1489,6 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
                     st.metric("Points", points)
                 
                 st.markdown("---")
-                render_performance_prediction_panel('squat')
             
             # Progress
             progress = frame_count / total_frames
@@ -1405,6 +1512,10 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
             st.warning("⏹️ Processing stopped by user")
         else:
             st.success(f"✅ Processing complete! Processed {frame_count} frames. Total squats: {st.session_state.session_stats['total_squats']}")
+        
+        # Display performance analysis after processing is complete
+        st.markdown("---")
+        render_performance_prediction_panel('squat')
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -1584,7 +1695,6 @@ def process_squat_live_camera(db, calibration_frames=100):
                     st.metric("Points", points)
                 
                 st.markdown("---")
-                render_performance_prediction_panel('squat')
             
             # Small delay for processing
             time.sleep(0.033)  # ~30 FPS
@@ -1610,6 +1720,10 @@ def process_squat_live_camera(db, calibration_frames=100):
             st.warning("⏹️ Processing stopped by user")
         else:
             st.success(f"✅ Processing complete! Processed {frame_count} frames. Total squats: {st.session_state.session_stats['total_squats']}")
+        
+        # Display performance analysis after processing is complete
+        st.markdown("---")
+        render_performance_prediction_panel('squat')
         
         st.rerun()
 
@@ -1877,7 +1991,6 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
                     st.metric("Points", points)
                 
                 st.markdown("---")
-                render_performance_prediction_panel('pushup')
             
             # Progress
             progress = frame_count / total_frames
@@ -1901,6 +2014,10 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
             st.warning("⏹️ Processing stopped by user")
         else:
             st.success(f"✅ Processing complete! Processed {frame_count} frames. Total push-ups: {st.session_state.session_stats['total_pushups']}")
+        
+        # Display performance analysis after processing is complete
+        st.markdown("---")
+        render_performance_prediction_panel('pushup')
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -2086,7 +2203,6 @@ def process_pushup_live_camera(db, calibration_frames=100):
                     st.metric("Points", points)
                 
                 st.markdown("---")
-                render_performance_prediction_panel('pushup')
             
             # Small delay for processing
             time.sleep(0.033)  # ~30 FPS
@@ -2112,6 +2228,10 @@ def process_pushup_live_camera(db, calibration_frames=100):
             st.warning("⏹️ Processing stopped by user")
         else:
             st.success(f"✅ Processing complete! Processed {frame_count} frames. Total push-ups: {st.session_state.session_stats['total_pushups']}")
+        
+        # Display performance analysis after processing is complete
+        st.markdown("---")
+        render_performance_prediction_panel('pushup')
         
         st.rerun()
 
