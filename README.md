@@ -276,7 +276,7 @@ To **design and develop an AI-powered system** that enhances athlete performance
 
 ### Clone repository
 git clone https://github.com/25-26J-334/NeuroMotion.git
-cd <your-repo>
+- cd <your-repo>
 
 ### Create and activate virtual environment
 python -m venv venv
