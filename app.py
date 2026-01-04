@@ -18,7 +18,8 @@ from squat_detector import SquatDetector
 from pushup_detector import PushupDetector
 from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
-from performance_prediction import compute_performance_prediction
+from performance_prediction import compute_performance_prediction, PredictionResult
+from performance_page import performance_page
 
 # Page configuration
 st.set_page_config(
@@ -348,6 +349,10 @@ def main_app():
         
         if st.button("🏆 Leaderboard", use_container_width=True):
             st.session_state.page = 'leaderboard'
+            st.rerun()
+        
+        if st.button("📈 Performance", use_container_width=True):
+            st.session_state.page = 'performance'
             st.rerun()
         
         if st.button("🎯 TrainPlans", use_container_width=True):
@@ -2398,6 +2403,8 @@ else:
         leaderboard_page()
     elif st.session_state.page == 'dashboard':
         dashboard_page()
+    elif st.session_state.page == 'performance':
+        performance_page()
     elif st.session_state.page == 'trainbot':
         trainbot_page()
     elif st.session_state.page == 'recommendations':
