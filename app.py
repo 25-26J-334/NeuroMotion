@@ -30,7 +30,7 @@ def calculate_fatigue_score(pred):
     
     # Factor 1: Trend analysis (declining trend increases fatigue)
     if hasattr(pred, 'trend') and hasattr(pred, 'trend_strength'):
-        if pred.trend == 'decreasing':
+        if pred.trend == 'declining':
             fatigue_score += 30 * pred.trend_strength
         elif pred.trend == 'stable':
             fatigue_score += 10 * pred.trend_strength
@@ -50,7 +50,7 @@ def calculate_fatigue_score(pred):
     
     # Factor 4: Performance drop based on trend strength and direction
     if hasattr(pred, 'trend_strength') and hasattr(pred, 'trend'):
-        if pred.trend == 'decreasing':
+        if pred.trend == 'declining':
             drop_factor = pred.trend_strength * 30
             fatigue_score += drop_factor
     
@@ -238,8 +238,8 @@ def render_performance_prediction_panel(exercise_type: str):
                 st.markdown("✅ **Keep Going**", unsafe_allow_html=True)
         
         # Fatigue trend analysis
-        if hasattr(pred, 'trend') and pred.trend == 'decreasing' and pred.trend_strength > 0.3:
-            st.markdown(f"📉 **Performance Decline:** {pred.trend_strength:.1%} decreasing trend detected")
+        if hasattr(pred, 'trend') and pred.trend == 'declining' and pred.trend_strength > 0.3:
+            st.markdown(f"📉 **Performance Decline:** {pred.trend_strength:.1%} declining trend detected")
         
         # Personalized recommendations
         if fatigue_score >= 70:
@@ -1005,10 +1005,9 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
                 st.markdown("#### 📊 Jump Stats:")
                 stats_col1, stats_col2 = st.columns(2)
                 with stats_col1:
-                    st.metric("Total Jumps", status['jump_count'])
+                    st.metric("Total Jumps", st.session_state.session_stats['total_jumps'])
                 with stats_col2:
-                    points = status.get('points', 0)
-                    st.metric("Points", points)
+                    st.metric("Points", st.session_state.session_stats['total_points'])
                 
                 st.markdown("---")
             
@@ -1045,6 +1044,11 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
         # Update prediction with final session data
         update_performance_prediction(db, 'jump', st.session_state.session_stats['total_jumps'])
         render_performance_prediction_panel('jump')
+        
+        # Wait a bit so user can see the success message and prediction panel before rerun
+        # but rerun is necessary to update the top-level metrics
+        time.sleep(1)
+        st.rerun()
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -1312,7 +1316,10 @@ def main_app_jump(db):
                 jump_height_value = "low" if "Low" in jump_height else ("high" if "High" in jump_height else "medium")
                 process_video_file(uploaded_file, db, calibration_frames, jump_height_value)
         
-        render_highlights_panel('jump')
+        if st.session_state.session_stats['total_jumps'] > 0:
+            render_highlights_panel('jump')
+            st.markdown("---")
+            render_performance_prediction_panel('jump')
     
     else:  # Camera
         st.info("💡 Position yourself in front of the camera. Click 'Start Processing' to begin live jump detection!")
@@ -1392,7 +1399,10 @@ def main_app_squat(db):
             if start_button:
                 process_squat_video_file(uploaded_file, db, calibration_frames)
         
-        render_highlights_panel('squat')
+        if st.session_state.session_stats['total_squats'] > 0:
+            render_highlights_panel('squat')
+            st.markdown("---")
+            render_performance_prediction_panel('squat')
     
     else:  # Camera
         st.info("💡 Position yourself in front of the camera. Click 'Start Processing' to begin live squat detection!")
@@ -1598,10 +1608,9 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
                 st.markdown("#### 📊 Squat Stats:")
                 stats_col1, stats_col2 = st.columns(2)
                 with stats_col1:
-                    st.metric("Total Squats", status['squat_count'])
+                    st.metric("Total Squats", st.session_state.session_stats['total_squats'])
                 with stats_col2:
-                    points = status.get('points', 0)
-                    st.metric("Points", points)
+                    st.metric("Points", st.session_state.session_stats['total_points'])
                 
                 st.markdown("---")
             
@@ -1638,6 +1647,10 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
         # Update prediction with final session data
         update_performance_prediction(db, 'squat', st.session_state.session_stats['total_squats'])
         render_performance_prediction_panel('squat')
+        
+        # Wait a bit before rerun to see final results
+        time.sleep(1)
+        st.rerun()
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -1899,7 +1912,10 @@ def main_app_pushup(db):
             if start_button:
                 process_pushup_video_file(uploaded_file, db, calibration_frames)
         
-        render_highlights_panel('pushup')
+        if st.session_state.session_stats['total_pushups'] > 0:
+            render_highlights_panel('pushup')
+            st.markdown("---")
+            render_performance_prediction_panel('pushup')
     
     else:  # Camera
         st.info("💡 Position yourself in front of the camera in push-up position. Click 'Start Processing' to begin live push-up detection!")
@@ -2108,13 +2124,13 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
                         st.error(f"{update_msg} ({update_time})")
                     st.markdown("---")
                 
+                # Fixed push-up stats - always present
                 st.markdown("#### 📊 Push-up Stats:")
                 stats_col1, stats_col2 = st.columns(2)
                 with stats_col1:
-                    st.metric("Total Push-ups", status['pushup_count'])
+                    st.metric("Total Push-ups", st.session_state.session_stats['total_pushups'])
                 with stats_col2:
-                    points = status.get('points', 0)
-                    st.metric("Points", points)
+                    st.metric("Points", st.session_state.session_stats['total_points'])
                 
                 st.markdown("---")
             
@@ -2151,6 +2167,10 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
         # Update prediction with final session data
         update_performance_prediction(db, 'pushup', st.session_state.session_stats['total_pushups'])
         render_performance_prediction_panel('pushup')
+        
+        # Wait a bit before rerun to see final results
+        time.sleep(1)
+        st.rerun()
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
