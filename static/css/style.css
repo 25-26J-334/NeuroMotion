@@ -1,0 +1,156 @@
+/* Global Font Import */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Poppins:wght@500;600;700&display=swap');
+
+/* Apply Fonts to Streamlit Config */
+html,
+body,
+[class*="css"] {
+    font-family: 'Inter', sans-serif;
+}
+
+h1,
+h2,
+h3,
+.stTitle {
+    font-family: 'Poppins', sans-serif !important;
+}
+
+/* Sidebar Container */
+section[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #001229 0%, #000814 100%);
+    border-right: 1px solid rgba(0, 168, 232, 0.1);
+}
+
+/* Sidebar Text Color */
+section[data-testid="stSidebar"] .stMarkdown,
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] span {
+    color: #E0F4FF !important;
+}
+
+/* Custom Separator Styling */
+section[data-testid="stSidebar"] hr {
+    margin: 1.5rem 0;
+    border: none;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0, 168, 232, 0.3), transparent);
+}
+
+/* Sidebar Buttons */
+section[data-testid="stSidebar"] .stButton>button {
+    width: 100%;
+    background: linear-gradient(90deg, rgba(0, 30, 60, 0.6) 0%, rgba(0, 18, 41, 0.6) 100%);
+    border: 1px solid rgba(0, 168, 232, 0.2);
+    border-radius: 12px;
+    color: #00A8E8;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 500;
+    font-size: 16px;
+    padding: 0.5rem 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(4px);
+    margin-bottom: 0.5rem;
+    text-align: left;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+}
+
+section[data-testid="stSidebar"] .stButton>button:hover,
+div[data-testid="stSidebarUserContent"] details>summary:hover {
+    background: linear-gradient(90deg, rgba(0, 168, 232, 0.15) 0%, rgba(0, 30, 60, 0.4) 100%);
+    border-color: #00A8E8;
+    color: #FFFFFF;
+    transform: translateX(5px);
+    box-shadow: -4px 0 15px rgba(0, 168, 232, 0.2);
+}
+
+/* Style Expander Header to match Buttons */
+div[data-testid="stSidebarUserContent"] details>summary {
+    background: linear-gradient(90deg, rgba(0, 30, 60, 0.6) 0%, rgba(0, 18, 41, 0.6) 100%);
+    border: 1px solid rgba(0, 168, 232, 0.2);
+    border-radius: 12px;
+    color: #00A8E8;
+    font-family: 'Poppins', sans-serif;
+    font-weight: 500;
+    font-size: 16px;
+    padding: 0.5rem 1rem;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    backdrop-filter: blur(4px);
+    margin-bottom: 0.5rem;
+    list-style: none;
+    /* Remove default triangle in some browsers */
+}
+
+/* Fix for expander arrow color */
+div[data-testid="stSidebarUserContent"] details>summary svg {
+    color: #00A8E8 !important;
+    fill: #00A8E8 !important;
+}
+
+/* Remove default focus outline/border on expander */
+div[data-testid="stSidebarUserContent"] details {
+    border-style: none !important;
+    border-width: 0 !important;
+    border-color: transparent !important;
+}
+
+div[data-testid="stSidebarUserContent"] details>summary:focus {
+    outline: none !important;
+    box-shadow: none !important;
+    /* Temporarily remove focus shadow if conflicting, or match hover */
+    border: 1px solid rgba(0, 168, 232, 0.2) !important;
+    /* Keep border consistent */
+}
+
+div[data-testid="stSidebarUserContent"] details>summary:active {
+    outline: none !important;
+    border: 1px solid rgba(0, 168, 232, 0.2) !important;
+}
+
+/* Active/Primary Button State for Session Types */
+section[data-testid="stSidebar"] .stButton>button[kind="primary"] {
+    background: linear-gradient(90deg, rgba(0, 168, 232, 0.2) 0%, rgba(0, 18, 41, 0.2) 100%);
+    border-color: #00A8E8;
+    color: #FFFFFF;
+    box-shadow: 0 0 10px rgba(0, 168, 232, 0.15);
+}
+
+/* Sidebar Title/User Profile Area */
+section[data-testid="stSidebar"] h1 {
+    font-size: 2.2rem !important;
+    background: linear-gradient(120deg, #FFFFFF 0%, #00A8E8 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 0.5rem;
+}
+
+section[data-testid="stSidebar"] .stCaption {
+    color: rgba(224, 244, 255, 0.6) !important;
+    font-size: 0.9rem;
+    font-family: 'Inter', sans-serif;
+    margin-bottom: 2rem;
+}
+
+/* Sidebar Section Headers */
+section[data-testid="stSidebar"] h3 {
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    font-size: 0.85rem !important;
+    color: rgba(0, 168, 232, 0.8) !important;
+    margin-top: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+/* Hide Streamlit Menu */
+#MainMenu {
+    visibility: hidden;
+}
+
+footer {
+    visibility: hidden;
+}

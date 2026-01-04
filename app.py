@@ -19,6 +19,16 @@ from pushup_detector import PushupDetector
 from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
 from performance_prediction import compute_performance_prediction
+import os
+
+def load_css():
+    """Load custom CSS styles"""
+    try:
+        css_path = os.path.join(os.path.dirname(__file__), "static", "css", "style.css")
+        with open(css_path, "r") as f:
+            st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
+    except Exception as e:
+        print(f"Error loading CSS: {e}")
 
 # Page configuration
 st.set_page_config(
@@ -135,6 +145,7 @@ def initialize_database():
 
 def user_registration():
     """User registration form"""
+    load_css()
     # Read and encode the image as base64
     import base64
     from pathlib import Path
@@ -152,8 +163,12 @@ def user_registration():
         st.markdown(f"""
         <style>
         .stApp {{
-            background: linear-gradient(rgba(0, 0, 0, 0.4), rgba(0, 0, 0, 0.4)), url("data:image/png;base64,{encoded_image}");
-            background-size: cover;
+            background-color: #00050D;
+            background-image: 
+                radial-gradient(circle at 10% 20%, rgba(0, 168, 232, 0.1) 0%, transparent 20%),
+                radial-gradient(circle at 90% 80%, rgba(0, 168, 232, 0.05) 0%, transparent 20%),
+                url("data:image/png;base64,{encoded_image}");
+            background-size: cover, cover, cover;
             background-position: center 30%;
             background-repeat: no-repeat;
             background-attachment: fixed;
@@ -163,10 +178,12 @@ def user_registration():
         .main .block-container {{
             max-width: 100px !important;
             padding: 15px !important;
-            background-color: rgba(255, 255, 255, 0.95) !important;
-            backdrop-filter: blur(10px) !important;
+            background-color: rgba(0, 18, 41, 0.6) !important;
+            backdrop-filter: blur(20px) !important;
+            -webkit-backdrop-filter: blur(20px) !important;
+            border: 1px solid rgba(0, 168, 232, 0.1) !important;
             border-radius: 15px !important;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1) !important;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
             position: absolute !important;
             left: 20px !important;
             top: 20px !important;
@@ -174,6 +191,23 @@ def user_registration():
         /* Target form specifically */
         div[data-testid="stForm"] {{
             max-width: 700px !important;
+            background-color: transparent !important;
+        }}
+        .stTextInput > label, .stNumberInput > label {{
+            color: #00A8E8 !important;
+            font-weight: 500 !important;
+        }}
+        /* Custom button styling */
+        .stButton > button {{
+            background: linear-gradient(90deg, #001229 0%, #002b4d 100%);
+            border: 1px solid rgba(0, 168, 232, 0.3);
+            color: #00A8E8;
+            transition: all 0.3s ease;
+        }}
+        .stButton > button:hover {{
+            border-color: #00A8E8;
+            box-shadow: 0 0 10px rgba(0, 168, 232, 0.2);
+            color: white;
         }}
         </style>
         """, unsafe_allow_html=True)
@@ -182,16 +216,19 @@ def user_registration():
         st.markdown("""
         <style>
         .stApp {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: #00050D;
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(0, 168, 232, 0.15) 0%, transparent 50%);
             min-height: 100vh;
         }
         .main .block-container {
-            background-color: rgba(255, 255, 255, 0.95);
-            backdrop-filter: blur(10px);
+            background-color: rgba(0, 18, 41, 0.7);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(0, 168, 232, 0.1);
             border-radius: 15px;
             padding: 30px;
             max-width: 600px;
-            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
         </style>
         """, unsafe_allow_html=True)
@@ -262,6 +299,7 @@ def user_registration():
 
 def main_app():
     """Main application interface"""
+    load_css()
     db = initialize_database()
     if db is None:
         st.error("Database connection lost. Please refresh the page.")
@@ -276,71 +314,72 @@ def main_app():
         st.title(f"👤 {st.session_state.user_name}")
         st.caption(f"Age: {st.session_state.user_age}")
         
-        st.markdown("### Exercise Type")
-        if st.button("🏃 Jump Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'jump' else "secondary"):
-            st.session_state.exercise_type = 'jump'
-            st.session_state.session_id = None
-            st.session_state.session_start_time = None
-            st.session_state.detector = None
-            st.session_state.squat_detector = None
-            st.session_state.pushup_detector = None
-            st.session_state.performance_prediction = None
-            st.session_state.performance_prediction_exercise = None
-            st.session_state.session_stats = {
-                'total_jumps': 0,
-                'total_squats': 0,
-                'total_pushups': 0,
-                'total_points': 0,
-                'total_bad_moves': 0,
-                'jumps_data': [],
-                'squats_data': [],
-                'pushups_data': []
-            }
-            st.rerun()
+        # Exercise Type Expander
+        with st.expander("Exercise Type", expanded=False):
+            if st.button("🏃 Jump Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'jump' else "secondary"):
+                st.session_state.exercise_type = 'jump'
+                st.session_state.session_id = None
+                st.session_state.session_start_time = None
+                st.session_state.detector = None
+                st.session_state.squat_detector = None
+                st.session_state.pushup_detector = None
+                st.session_state.performance_prediction = None
+                st.session_state.performance_prediction_exercise = None
+                st.session_state.session_stats = {
+                    'total_jumps': 0,
+                    'total_squats': 0,
+                    'total_pushups': 0,
+                    'total_points': 0,
+                    'total_bad_moves': 0,
+                    'jumps_data': [],
+                    'squats_data': [],
+                    'pushups_data': []
+                }
+                st.rerun()
+            
+            if st.button("🦵 Squat Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'squat' else "secondary"):
+                st.session_state.exercise_type = 'squat'
+                st.session_state.session_id = None
+                st.session_state.session_start_time = None
+                st.session_state.detector = None
+                st.session_state.squat_detector = None
+                st.session_state.pushup_detector = None
+                st.session_state.performance_prediction = None
+                st.session_state.performance_prediction_exercise = None
+                st.session_state.session_stats = {
+                    'total_jumps': 0,
+                    'total_squats': 0,
+                    'total_pushups': 0,
+                    'total_points': 0,
+                    'total_bad_moves': 0,
+                    'jumps_data': [],
+                    'squats_data': [],
+                    'pushups_data': []
+                }
+                st.rerun()
+            
+            if st.button("💪 Push-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'pushup' else "secondary"):
+                st.session_state.exercise_type = 'pushup'
+                st.session_state.session_id = None
+                st.session_state.session_start_time = None
+                st.session_state.detector = None
+                st.session_state.squat_detector = None
+                st.session_state.pushup_detector = None
+                st.session_state.performance_prediction = None
+                st.session_state.performance_prediction_exercise = None
+                st.session_state.session_stats = {
+                    'total_jumps': 0,
+                    'total_squats': 0,
+                    'total_pushups': 0,
+                    'total_points': 0,
+                    'total_bad_moves': 0,
+                    'jumps_data': [],
+                    'squats_data': [],
+                    'pushups_data': []
+                }
+                st.rerun()
         
-        if st.button("🦵 Squat Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'squat' else "secondary"):
-            st.session_state.exercise_type = 'squat'
-            st.session_state.session_id = None
-            st.session_state.session_start_time = None
-            st.session_state.detector = None
-            st.session_state.squat_detector = None
-            st.session_state.pushup_detector = None
-            st.session_state.performance_prediction = None
-            st.session_state.performance_prediction_exercise = None
-            st.session_state.session_stats = {
-                'total_jumps': 0,
-                'total_squats': 0,
-                'total_pushups': 0,
-                'total_points': 0,
-                'total_bad_moves': 0,
-                'jumps_data': [],
-                'squats_data': [],
-                'pushups_data': []
-            }
-            st.rerun()
-        
-        if st.button("💪 Push-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'pushup' else "secondary"):
-            st.session_state.exercise_type = 'pushup'
-            st.session_state.session_id = None
-            st.session_state.session_start_time = None
-            st.session_state.detector = None
-            st.session_state.squat_detector = None
-            st.session_state.pushup_detector = None
-            st.session_state.performance_prediction = None
-            st.session_state.performance_prediction_exercise = None
-            st.session_state.session_stats = {
-                'total_jumps': 0,
-                'total_squats': 0,
-                'total_pushups': 0,
-                'total_points': 0,
-                'total_bad_moves': 0,
-                'jumps_data': [],
-                'squats_data': [],
-                'pushups_data': []
-            }
-            st.rerun()
-        
-        st.markdown("---")
+
         
         if st.button("📊 Dashboard", use_container_width=True):
             st.session_state.page = 'dashboard'
@@ -519,7 +558,7 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
             cv2.addWeighted(overlay, 0.7, annotated_frame, 0.3, 0, annotated_frame)
             
             cv2.putText(annotated_frame, f"Jumps: {status['jump_count']}", (15, 35),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (232, 168, 0), 2)
             cv2.putText(annotated_frame, f"Status: {status['status_text']}", (15, 65),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             
@@ -730,7 +769,7 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
             cv2.addWeighted(overlay, 0.7, annotated_frame, 0.3, 0, annotated_frame)
             
             cv2.putText(annotated_frame, f"Jumps: {status['jump_count']}", (15, 35),
-                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 0), 2)
+                       cv2.FONT_HERSHEY_SIMPLEX, 1.0, (232, 168, 0), 2)
             cv2.putText(annotated_frame, f"Status: {status['status_text']}", (15, 65),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
             
@@ -1935,11 +1974,13 @@ def leaderboard_page():
             col1, col2 = st.columns(2)
             with col1:
                 fig = px.bar(df.head(10), x='name', y='total_points', 
-                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'})
+                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'},
+                            color_discrete_sequence=['#FF2E2E'])
                 st.plotly_chart(fig, use_container_width=True, key="jump_leaderboard_points")
             with col2:
                 fig = px.bar(df.head(10), x='name', y='total_count',
-                            title="Top 10 by Jumps", labels={'name': 'Name', 'total_count': 'Jumps'})
+                            title="Top 10 by Jumps", labels={'name': 'Name', 'total_count': 'Jumps'},
+                            color_discrete_sequence=['#00A8E8'])
                 st.plotly_chart(fig, use_container_width=True, key="jump_leaderboard_jumps")
         else:
             st.info("No jump data available yet. Start training to see rankings!")
@@ -1966,11 +2007,13 @@ def leaderboard_page():
             col1, col2 = st.columns(2)
             with col1:
                 fig = px.bar(df.head(10), x='name', y='total_points', 
-                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'})
+                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'},
+                            color_discrete_sequence=['#FF2E2E'])
                 st.plotly_chart(fig, use_container_width=True, key="squat_leaderboard_points")
             with col2:
                 fig = px.bar(df.head(10), x='name', y='total_count',
-                            title="Top 10 by Squats", labels={'name': 'Name', 'total_count': 'Squats'})
+                            title="Top 10 by Squats", labels={'name': 'Name', 'total_count': 'Squats'},
+                            color_discrete_sequence=['#F28500'])
                 st.plotly_chart(fig, use_container_width=True, key="squat_leaderboard_squats")
         else:
             st.info("No squat data available yet. Start training to see rankings!")
@@ -1997,11 +2040,13 @@ def leaderboard_page():
             col1, col2 = st.columns(2)
             with col1:
                 fig = px.bar(df.head(10), x='name', y='total_points', 
-                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'})
+                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'},
+                            color_discrete_sequence=['#FF2E2E'])
                 st.plotly_chart(fig, use_container_width=True, key="pushup_leaderboard_points")
             with col2:
                 fig = px.bar(df.head(10), x='name', y='total_count',
-                            title="Top 10 by Push-ups", labels={'name': 'Name', 'total_count': 'Push-ups'})
+                            title="Top 10 by Push-ups", labels={'name': 'Name', 'total_count': 'Push-ups'},
+                            color_discrete_sequence=['#66FF00'])
                 st.plotly_chart(fig, use_container_width=True, key="pushup_leaderboard_pushups")
         else:
             st.info("No push-up data available yet. Start training to see rankings!")
@@ -2028,11 +2073,13 @@ def leaderboard_page():
             col1, col2 = st.columns(2)
             with col1:
                 fig = px.bar(df.head(10), x='name', y='total_points', 
-                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'})
+                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'},
+                            color_discrete_sequence=['#FF2E2E'])
                 st.plotly_chart(fig, use_container_width=True, key="overall_leaderboard_points")
             with col2:
                 fig = px.bar(df.head(10), x='name', y='total_count',
-                            title="Top 10 by Total Exercises", labels={'name': 'Name', 'total_count': 'Exercises'})
+                            title="Top 10 by Total Exercises", labels={'name': 'Name', 'total_count': 'Exercises'},
+                            color_discrete_sequence=['#D162A4'])
                 st.plotly_chart(fig, use_container_width=True, key="overall_leaderboard_total")
         else:
             st.info("No data available yet. Start training to see rankings!")
@@ -2056,30 +2103,90 @@ def dashboard_page():
     exercise_dist = db.get_exercise_distribution()
     
     # Overall metrics - Row 1
+    # Custom CSS for cards
+    st.markdown("""
+    <style>
+    .dashboard-card {
+        background-color: #001229;
+        padding: 20px;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+        margin-bottom: 20px;
+    }
+    .metric-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        text-align: center;
+    }
+    .metric-label {
+        font-size: 0.9rem;
+        color: #aaaaaa;
+        margin-bottom: 5px;
+    }
+    .metric-value {
+        font-size: 1.8rem;
+        font-weight: bold;
+        color: #ffffff;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Overall metrics - Card View
     st.markdown("### 📈 Overall Statistics")
-    col1, col2, col3, col4, col5, col6 = st.columns(6)
-    with col1:
-        st.metric("Total Participants", stats.get('total_participants', 0))
-    with col2:
-        st.metric("Total Sessions", stats.get('total_sessions', 0))
-    with col3:
-        st.metric("Total Exercises", stats.get('total_exercises', 0))
-    with col4:
-        st.metric("Total Points", stats.get('total_points', 0))
-    with col5:
-        st.metric("Bad Moves", stats.get('total_bad_moves', 0))
-    with col6:
-        st.metric("Avg/Session", f"{stats.get('avg_exercises_per_session', 0):.1f}")
     
-    # Exercise-specific metrics - Row 2
+    st.markdown(f"""
+    <div class="dashboard-card">
+        <div style="display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px;">
+            <div class="metric-container">
+                <div class="metric-label">Total Participants</div>
+                <div class="metric-value">{stats.get('total_participants', 0)}</div>
+            </div>
+            <div class="metric-container">
+                <div class="metric-label">Total Sessions</div>
+                <div class="metric-value">{stats.get('total_sessions', 0)}</div>
+            </div>
+            <div class="metric-container">
+                <div class="metric-label">Total Exercises</div>
+                <div class="metric-value">{stats.get('total_exercises', 0)}</div>
+            </div>
+            <div class="metric-container">
+                <div class="metric-label">Total Points</div>
+                <div class="metric-value">{stats.get('total_points', 0)}</div>
+            </div>
+            <div class="metric-container">
+                <div class="metric-label">Bad Moves</div>
+                <div class="metric-value">{stats.get('total_bad_moves', 0)}</div>
+            </div>
+            <div class="metric-container">
+                <div class="metric-label">Avg/Session</div>
+                <div class="metric-value">{stats.get('avg_exercises_per_session', 0):.1f}</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Exercise-specific metrics - Card View
     st.markdown("### 🏋️ Exercise Breakdown")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("🏃 Total Jumps", stats.get('total_jumps', 0))
-    with col2:
-        st.metric("🦵 Total Squats", stats.get('total_squats', 0))
-    with col3:
-        st.metric("💪 Total Push-ups", stats.get('total_pushups', 0))
+    
+    st.markdown(f"""
+    <div class="dashboard-card">
+        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+            <div class="metric-container">
+                <div class="metric-label">🏃 Total Jumps</div>
+                <div class="metric-value" style="color: #00A8E8;">{stats.get('total_jumps', 0)}</div>
+            </div>
+            <div class="metric-container">
+                <div class="metric-label">🦵 Total Squats</div>
+                <div class="metric-value" style="color: #F28500;">{stats.get('total_squats', 0)}</div>
+            </div>
+            <div class="metric-container">
+                <div class="metric-label">💪 Total Push-ups</div>
+                <div class="metric-value" style="color: #66FF00;">{stats.get('total_pushups', 0)}</div>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     st.markdown("---")
     
@@ -2103,9 +2210,9 @@ def dashboard_page():
                 color='exercise',
                 title="Exercise Type Distribution",
                 color_discrete_map={
-                    'Jumps': '#1f77b4',
-                    'Squats': '#ff7f0e',
-                    'Push-ups': '#2ca02c'
+                    'Jumps': '#00A8E8',
+                    'Squats': '#F28500',
+                    'Push-ups': '#66FF00'
                 }
             )
             st.plotly_chart(fig_pie, use_container_width=True, key="dashboard_pie_chart")
@@ -2127,7 +2234,7 @@ def dashboard_page():
                     name='Jumps',
                     x=df_jumps['name'],
                     y=df_jumps['count'],
-                    marker_color='#1f77b4'
+                    marker_color='#00A8E8'
                 ))
             
             if top_squats:
@@ -2136,7 +2243,7 @@ def dashboard_page():
                     name='Squats',
                     x=df_squats['name'],
                     y=df_squats['count'],
-                    marker_color='#ff7f0e'
+                    marker_color='#F28500'
                 ))
             
             if top_pushups:
@@ -2145,7 +2252,7 @@ def dashboard_page():
                     name='Push-ups',
                     x=df_pushups['name'],
                     y=df_pushups['count'],
-                    marker_color='#2ca02c'
+                    marker_color='#66FF00'
                 ))
             
             fig_bar.update_layout(
@@ -2191,21 +2298,21 @@ def dashboard_page():
                 y=df_time['jumps'],
                 mode='lines+markers',
                 name='Jumps',
-                line=dict(color='#1f77b4', width=2)
+                line=dict(color='#00A8E8', width=2)
             ))
             fig_line.add_trace(go.Scatter(
                 x=df_time['hour'],
                 y=df_time['squats'],
                 mode='lines+markers',
                 name='Squats',
-                line=dict(color='#ff7f0e', width=2)
+                line=dict(color='#F28500', width=2)
             ))
             fig_line.add_trace(go.Scatter(
                 x=df_time['hour'],
                 y=df_time['pushups'],
                 mode='lines+markers',
                 name='Push-ups',
-                line=dict(color='#2ca02c', width=2)
+                line=dict(color='#66FF00', width=2)
             ))
             fig_line.update_layout(
                 title="Exercise Count Over Time (Hourly)",
@@ -2223,7 +2330,7 @@ def dashboard_page():
                 title="Points Over Time (Hourly)",
                 markers=True
             )
-            fig_points.update_traces(line_color='#d62728', line_width=2)
+            fig_points.update_traces(line_color='#FF2E2E', line_width=2)
             st.plotly_chart(fig_points, use_container_width=True, key="dashboard_points_chart")
         
         # Bar Charts - Sessions and Participants
@@ -2237,7 +2344,7 @@ def dashboard_page():
                 title="Sessions Over Time (Hourly)",
                 labels={'sessions': 'Number of Sessions', 'hour': 'Time'}
             )
-            fig_sessions.update_traces(marker_color='#9467bd')
+            fig_sessions.update_traces(marker_color='#D162A4')
             st.plotly_chart(fig_sessions, use_container_width=True, key="dashboard_sessions_chart")
         
         with col4:
@@ -2248,7 +2355,7 @@ def dashboard_page():
                 title="Active Participants Over Time (Hourly)",
                 markers=True
             )
-            fig_participants.update_traces(line_color='#8c564b', line_width=2)
+            fig_participants.update_traces(line_color='#E2E200', line_width=2)
             st.plotly_chart(fig_participants, use_container_width=True, key="dashboard_participants_chart")
     else:
         st.info("No time-based statistics available yet. Start training to see trends!")
@@ -2260,20 +2367,34 @@ def dashboard_page():
         user_stats = db.get_user_stats(st.session_state.user_id)
         
         if user_stats:
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                sessions = user_stats.get('total_sessions') or 0
-                st.metric("Your Sessions", sessions)
-            with col2:
-                jumps = user_stats.get('total_jumps') or 0
-                st.metric("Your Total Jumps", jumps)
-            with col3:
-                points = user_stats.get('total_points') or 0
-                st.metric("Your Total Points", points)
-            with col4:
-                avg_points = user_stats.get('avg_points_per_session') or 0
-                avg_points = float(avg_points) if avg_points is not None else 0.0
-                st.metric("Avg Points/Session", f"{avg_points:.1f}")
+            sessions = user_stats.get('total_sessions') or 0
+            jumps = user_stats.get('total_jumps') or 0
+            points = user_stats.get('total_points') or 0
+            avg_points = user_stats.get('avg_points_per_session') or 0
+            avg_points = float(avg_points) if avg_points is not None else 0.0
+
+            st.markdown(f"""
+            <div class="dashboard-card">
+                <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                    <div class="metric-container">
+                        <div class="metric-label">Your Sessions</div>
+                        <div class="metric-value" style="color: #00A8E8;">{sessions}</div>
+                    </div>
+                    <div class="metric-container">
+                        <div class="metric-label">Your Total Jumps</div>
+                        <div class="metric-value" style="color: #00A8E8;">{jumps}</div>
+                    </div>
+                    <div class="metric-container">
+                        <div class="metric-label">Your Total Points</div>
+                        <div class="metric-value" style="color: #FF2E2E;">{points}</div>
+                    </div>
+                    <div class="metric-container">
+                        <div class="metric-label">Avg Points/Session</div>
+                        <div class="metric-value">{avg_points:.1f}</div>
+                    </div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
         else:
             st.info("Complete a training session to see your statistics!")
 

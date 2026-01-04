@@ -21,8 +21,9 @@ def show_detailed_recommendation_full_page(recommendation: dict):
         st.markdown(f"""
         <style>
         div[data-testid="stHorizontalBlock"] > div:nth-child(1) button {{
-            background-color: #ff4b4b !important;
+            background-color: #FF2E2E !important;
             color: white !important;
+            border: 1px solid #FF2E2E !important;
         }}
         </style>
         """, unsafe_allow_html=True)
@@ -291,11 +292,11 @@ def show_detailed_recommendation_callback():
 def display_recommendation_card(recommendation: dict, index: int, priority: str):
     """Display a single recommendation as a card"""
     
-    # Priority colors
+    # Priority colors (Neon)
     priority_colors = {
-        'high': '#ff4b4b',
-        'medium': '#ffa500', 
-        'low': '#00cc00'
+        'high': '#FF2E2E',    # Neon Red
+        'medium': '#F28500',  # Neon Orange
+        'low': '#228B22'      # Neon Green/Cyan
     }
     
     # Exercise icons
@@ -356,7 +357,7 @@ def display_performance_charts(analytics: dict, user_id: int, db: Database):
         
         # Add lines for each exercise type
         exercise_types = ['jumps', 'squats', 'pushups']
-        colors = ['#FF6B6B', '#4ECDC4', '#45B7D1']
+        colors = ['#00A8E8', '#F28500', '#228B22']  # Blue, Orange, Green (Neon)
         
         for i, exercise_type in enumerate(exercise_types):
             exercise_data = [d for d in historical_data if d['exercise_type'] == exercise_type]

@@ -314,7 +314,7 @@ class JumpDetector:
                 status['danger_detected'] = self.danger_detected
             
             # Draw skeleton with color coding
-            landmark_color = (0, 0, 255) if status['danger_detected'] else (0, 255, 0)
+            landmark_color = (0, 0, 255) if status['danger_detected'] else (232, 168, 0) # Red for danger, Cyan for good
             connection_color = (0, 0, 255) if status['danger_detected'] else (255, 255, 255)
             
             landmark_drawing_spec = self.mp_draw.DrawingSpec(
@@ -340,24 +340,24 @@ class JumpDetector:
         if not self.calibrating and self.baseline_y is not None and self.jump_threshold is not None:
             h, w = frame.shape[:2]
             
-            # Draw baseline (green) - standing position (draw first so it's behind)
+            # Draw baseline (cyan) - standing position (draw first so it's behind)
             base_px = int(self.baseline_y * h)
-            cv2.line(frame, (0, base_px), (w, base_px), (0, 255, 0), 2)
+            cv2.line(frame, (0, base_px), (w, base_px), (232, 168, 0), 2)
             
-            # Draw jump threshold line (yellow) - EXACTLY at the trigger point based on jump_height
+            # Draw jump threshold line (orange) - EXACTLY at the trigger point based on jump_height
             # This line is at the baseline (center point when standing)
             # When center point goes above this yellow line, jump is detected
             threshold_px = int(self.jump_threshold * h)
-            cv2.line(frame, (0, threshold_px), (w, threshold_px), (0, 255, 255), 3)
+            cv2.line(frame, (0, threshold_px), (w, threshold_px), (0, 165, 255), 3)
             
-            # Draw trigger point line (blue) - current trigger point (varies by jump_height)
+            # Draw trigger point line (white) - current trigger point (varies by jump_height)
             if self.smoothed_trigger_y is not None:
                 trigger_px = int(self.smoothed_trigger_y * h)
-                cv2.line(frame, (0, trigger_px), (w, trigger_px), (255, 0, 0), 2)
+                cv2.line(frame, (0, trigger_px), (w, trigger_px), (255, 255, 255), 2)
             
-            # Draw hip position line (cyan) - current hip position (for reference)
+            # Draw hip position line (blue) - current hip position (for reference)
             if self.smoothed_hip_y is not None:
                 hip_px = int(self.smoothed_hip_y * h)
-                cv2.line(frame, (0, hip_px), (w, hip_px), (255, 255, 0), 1)
+                cv2.line(frame, (0, hip_px), (w, hip_px), (255, 0, 0), 1)
         
         return frame, status
