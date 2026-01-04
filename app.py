@@ -111,6 +111,7 @@ def render_performance_prediction_panel(exercise_type: str):
         st.caption("Start training to see predictions based on your session history.")
         return
 
+    # Main prediction metrics
     metric_col1, metric_col2, metric_col3 = st.columns(3)
     with metric_col1:
         st.metric("Pred Speed (reps/min)", f"{pred.predicted_speed_rpm:.1f}")
@@ -119,8 +120,130 @@ def render_performance_prediction_panel(exercise_type: str):
     with metric_col3:
         st.metric("Performance Rating", f"{pred.predicted_rating:.0f}/100")
 
-    st.markdown(f"**Trend:** {pred.trend} (based on last {pred.history_points} sessions)")
-
+    # Trend analysis with confidence
+    trend_col1, trend_col2, trend_col3 = st.columns(3)
+    with trend_col1:
+        st.markdown(f"**Trend:** {pred.trend.upper()}")
+    with trend_col2:
+        st.markdown(f"**Trend Strength:** {pred.trend_strength:.3f}")
+    with trend_col3:
+        st.markdown(f"**Data Points:** {pred.history_points}")
+    
+    # Confidence interval
+    if pred.history_points >= 2:
+        st.markdown(f"**95% Confidence Interval:** {pred.confidence_interval['lower']:.1f} - {pred.confidence_interval['upper']:.1f}")
+    
+    st.markdown("---")
+    
+    # Error Metrics Section
+    if pred.history_points >= 2:
+        st.markdown("#### 📊 Model Accuracy Metrics")
+        error_col1, error_col2, error_col3 = st.columns(3)
+        
+        with error_col1:
+            st.markdown("**Speed Prediction**")
+            st.markdown(f"RMSE: {pred.rmse_speed:.2f}")
+            st.markdown(f"MAE: {pred.mae_speed:.2f}")
+            st.markdown(f"R²: {pred.r2_speed:.3f}")
+            
+        with error_col2:
+            st.markdown("**Endurance Prediction**")
+            st.markdown(f"RMSE: {pred.rmse_endurance:.2f}")
+            st.markdown(f"MAE: {pred.mae_endurance:.2f}")
+            st.markdown(f"R²: {pred.r2_endurance:.3f}")
+            
+        with error_col3:
+            st.markdown("**Rating Prediction**")
+            st.markdown(f"RMSE: {pred.rmse_rating:.2f}")
+            st.markdown(f"MAE: {pred.mae_rating:.2f}")
+            st.markdown(f"R²: {pred.r2_rating:.3f}")
+        
+        st.markdown("---")
+    
+    # Performance History Chart
+    if pred.performance_history:
+        st.markdown("#### 📈 Performance Trend Over Time")
+        
+        # Prepare data for plotting
+        history_df = pd.DataFrame(pred.performance_history)
+        
+        # Create trend chart
+        fig = go.Figure()
+        
+        # Add speed trend
+        fig.add_trace(go.Scatter(
+            x=history_df['session_number'],
+            y=history_df['speed_rpm'],
+            mode='lines+markers',
+            name='Speed (reps/min)',
+            line=dict(color='#00A8E8', width=3),
+            marker=dict(size=8)
+        ))
+        
+        # Add endurance trend
+        fig.add_trace(go.Scatter(
+            x=history_df['session_number'],
+            y=history_df['endurance_score'],
+            mode='lines+markers',
+            name='Endurance Score',
+            line=dict(color='#FF6B6B', width=3),
+            marker=dict(size=8)
+        ))
+        
+        # Add rating trend
+        fig.add_trace(go.Scatter(
+            x=history_df['session_number'],
+            y=history_df['rating'],
+            mode='lines+markers',
+            name='Performance Rating',
+            line=dict(color='#4ECDC4', width=3),
+            marker=dict(size=8)
+        ))
+        
+        # Add predicted values as dashed lines
+        if pred.history_points >= 1:
+            next_session = pred.history_points + 1
+            
+            # Add predicted values
+            fig.add_trace(go.Scatter(
+                x=[next_session],
+                y=[pred.predicted_speed_rpm],
+                mode='markers',
+                name='Pred Speed',
+                marker=dict(color='#00A8E8', size=12, symbol='diamond')
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=[next_session],
+                y=[pred.predicted_endurance_score],
+                mode='markers',
+                name='Pred Endurance',
+                marker=dict(color='#FF6B6B', size=12, symbol='diamond')
+            ))
+            
+            fig.add_trace(go.Scatter(
+                x=[next_session],
+                y=[pred.predicted_rating],
+                mode='markers',
+                name='Pred Rating',
+                marker=dict(color='#4ECDC4', size=12, symbol='diamond')
+            ))
+        
+        fig.update_layout(
+            title="Performance Trends & Predictions",
+            xaxis_title="Session Number",
+            yaxis_title="Score / Value",
+            height=400,
+            showlegend=True,
+            template="plotly_dark"
+        )
+        
+        st.plotly_chart(fig, use_container_width=True, key="performance_trend_chart")
+        
+        st.markdown("---")
+    
+    # Training Load Forecast
+    st.markdown("#### 🔮 Future Performance Under Different Training Loads")
     try:
         df = pd.DataFrame(pred.forecast)
         df = df.rename(columns={
@@ -129,8 +252,65 @@ def render_performance_prediction_panel(exercise_type: str):
             'pred_endurance_score': 'Endurance',
             'pred_rating': 'Rating'
         })
+        
+        # Add load descriptions
+        df['Load Description'] = df['Training Load'].apply(
+            lambda x: 'Light (80%)' if x == 0.8 else ('Normal (100%)' if x == 1.0 else 'Heavy (120%)')
+        )
+        
+        # Reorder columns
+        df = df[['Load Description', 'Training Load', 'Speed (reps/min)', 'Endurance', 'Rating']]
+        
         st.dataframe(df, use_container_width=True, hide_index=True)
-    except Exception:
+        
+        # Create forecast chart
+        fig_forecast = go.Figure()
+        
+        loads = df['Training Load'].values
+        speeds = df['Speed (reps/min)'].values
+        endurance = df['Endurance'].values
+        ratings = df['Rating'].values
+        
+        fig_forecast.add_trace(go.Scatter(
+            x=loads,
+            y=speeds,
+            mode='lines+markers',
+            name='Speed',
+            line=dict(color='#00A8E8', width=3),
+            marker=dict(size=10)
+        ))
+        
+        fig_forecast.add_trace(go.Scatter(
+            x=loads,
+            y=endurance,
+            mode='lines+markers',
+            name='Endurance',
+            line=dict(color='#FF6B6B', width=3),
+            marker=dict(size=10)
+        ))
+        
+        fig_forecast.add_trace(go.Scatter(
+            x=loads,
+            y=ratings,
+            mode='lines+markers',
+            name='Rating',
+            line=dict(color='#4ECDC4', width=3),
+            marker=dict(size=10)
+        ))
+        
+        fig_forecast.update_layout(
+            title="Performance Forecast by Training Load",
+            xaxis_title="Training Load (Relative to Current)",
+            yaxis_title="Predicted Performance",
+            height=350,
+            showlegend=True,
+            template="plotly_dark"
+        )
+        
+        st.plotly_chart(fig_forecast, use_container_width=True, key="performance_forecast_chart")
+        
+    except Exception as e:
+        st.error(f"Error displaying forecast: {str(e)}")
         pass
 
 def initialize_database():
