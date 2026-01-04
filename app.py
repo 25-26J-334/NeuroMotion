@@ -21,7 +21,6 @@ from recommendations_ui import recommendations_page, add_recommendations_to_side
 from performance_prediction import compute_performance_prediction, PredictionResult
 from performance_page import performance_page
 from posture_library import posture_library_page, show_posture_tips_during_training
-from template_system import template_library_page, template_schedule_page
 
 # Page configuration
 st.set_page_config(
@@ -373,10 +372,6 @@ def main_app():
         
         if st.button("🧘‍♂️ Posture Library", use_container_width=True):
             st.session_state.page = 'posture_library'
-            st.rerun()
-        
-        if st.button("📋 Workout Templates", use_container_width=True):
-            st.session_state.page = 'template_library'
             st.rerun()
         
         if st.button("🎯 TrainPlans", use_container_width=True):
@@ -2449,10 +2444,6 @@ else:
         performance_page()
     elif st.session_state.page == 'posture_library':
         posture_library_page()
-    elif st.session_state.page == 'template_library':
-        template_library_page()
-    elif st.session_state.page == 'template_schedule':
-        template_schedule_page()
     elif st.session_state.page == 'trainbot':
         trainbot_page()
     elif st.session_state.page == 'recommendations':
