@@ -44,6 +44,8 @@ class PushupDetector:
         self.current_pushup_warnings = []
         self.current_pushup_bad_moves = 0
         self.was_down = False  # Track if we were in down position
+        self.rep_history = []
+        self.rep_start_frame = None
     
     def start_recalibration(self):
         """Start recalibration process"""
@@ -157,7 +159,7 @@ class PushupDetector:
         # Count bad moves (each warning type counts as 1)
         self.current_pushup_bad_moves = len(set(self.current_pushup_warnings))
     
-    def process_frame(self, frame) -> Tuple[np.ndarray, Dict]:
+    def process_frame(self, frame, frame_index=None) -> Tuple[np.ndarray, Dict]:
         """
         Process a single frame and return annotated frame and status
         
@@ -213,6 +215,7 @@ class PushupDetector:
                 # Check if nose goes down (pushing down)
                 if not self.pushing_down and self.smoothed_nose_y >= self.pushup_threshold:
                     self.pushing_down = True
+                    self.rep_start_frame = frame_index
                     self.was_down = True
                     status['status_text'] = "Pushing Down ↓"
                     self.current_pushup_warnings = []
@@ -229,6 +232,14 @@ class PushupDetector:
                         # Calculate points: 10 points per push-up, -2 per bad move
                         points = 10 - (self.current_pushup_bad_moves * 2)
                         points = max(0, points)  # No negative points
+                        
+                        # Record rep history
+                        self.rep_history.append({
+                            'rep_number': self.pushup_count,
+                            'start_frame': self.rep_start_frame,
+                            'end_frame': frame_index,
+                            'points': points
+                        })
                         
                         status['pushup_count'] = self.pushup_count
                         status['status_text'] = f"Pushing Up ✓ ({self.pushup_count} push-ups)"

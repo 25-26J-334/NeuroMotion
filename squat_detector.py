@@ -44,6 +44,8 @@ class SquatDetector:
         self.current_squat_warnings = []
         self.current_squat_bad_moves = 0
         self.was_down = False  # Track if we were in down position
+        self.rep_history = []
+        self.rep_start_frame = None
     
     def start_recalibration(self):
         """Start recalibration process"""
@@ -148,7 +150,7 @@ class SquatDetector:
         # Count bad moves (each warning type counts as 1)
         self.current_squat_bad_moves = len(set(self.current_squat_warnings))
     
-    def process_frame(self, frame) -> Tuple[np.ndarray, Dict]:
+    def process_frame(self, frame, frame_index=None) -> Tuple[np.ndarray, Dict]:
         """
         Process a single frame and return annotated frame and status
         
@@ -204,6 +206,7 @@ class SquatDetector:
                 # Check if hip goes down (squatting down)
                 if not self.squatting and self.smoothed_hip_y >= self.squat_threshold:
                     self.squatting = True
+                    self.rep_start_frame = frame_index
                     self.was_down = True
                     status['status_text'] = "Squatting Down ↓"
                     self.current_squat_warnings = []
@@ -220,6 +223,14 @@ class SquatDetector:
                         # Calculate points: 10 points per squat, -2 per bad move
                         points = 10 - (self.current_squat_bad_moves * 2)
                         points = max(0, points)  # No negative points
+                        
+                        # Record rep history
+                        self.rep_history.append({
+                            'rep_number': self.squat_count,
+                            'start_frame': self.rep_start_frame,
+                            'end_frame': frame_index,
+                            'points': points
+                        })
                         
                         status['squat_count'] = self.squat_count
                         status['status_text'] = f"Standing Up ✓ ({self.squat_count} squats)"
