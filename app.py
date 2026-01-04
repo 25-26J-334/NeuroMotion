@@ -18,6 +18,7 @@ from squat_detector import SquatDetector
 from pushup_detector import PushupDetector
 from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
+from heatmap_ui import heatmap_page
 from performance_prediction import compute_performance_prediction
 import os
 
@@ -80,6 +81,11 @@ if 'performance_prediction' not in st.session_state:
     st.session_state.performance_prediction = None
 if 'performance_prediction_exercise' not in st.session_state:
     st.session_state.performance_prediction_exercise = None
+for ex in ['jump', 'squat', 'pushup']:
+    if f'{ex}_best_rep_gif' not in st.session_state:
+        st.session_state[f'{ex}_best_rep_gif'] = None
+    if f'{ex}_worst_rep_gif' not in st.session_state:
+        st.session_state[f'{ex}_worst_rep_gif'] = None
 
 def update_performance_prediction(db, exercise_type: str, current_count: int):
     if not st.session_state.user_id:
@@ -132,6 +138,85 @@ def render_performance_prediction_panel(exercise_type: str):
         st.dataframe(df, use_container_width=True, hide_index=True)
     except Exception:
         pass
+
+def extract_gif(video_path, start_frame, end_frame, output_path, resize_factor=0.5):
+    """Extract a segment of video and save as GIF"""
+    import os
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return False
+    
+    # Validation
+    if start_frame is None or end_frame is None:
+        cap.release()
+        return False
+    
+    # Add a small buffer before and after (approx 0.5s)
+    fps = cap.get(cv2.CAP_PROP_FPS) or 30
+    buffer = int(fps * 0.5)
+    start_frame = max(0, start_frame - buffer)
+    end_frame = end_frame + buffer
+    
+    cap.set(cv2.CAP_PROP_POS_FRAMES, start_frame)
+    
+    frames = []
+    current_frame = start_frame
+    while current_frame <= end_frame:
+        ret, frame = cap.read()
+        if not ret:
+            break
+        
+        # Resize to make GIF smaller
+        w = int(frame.shape[1] * resize_factor)
+        h = int(frame.shape[0] * resize_factor)
+        frame = cv2.resize(frame, (w, h))
+        
+        # Convert to RGB for PIL
+        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        frames.append(Image.fromarray(frame_rgb))
+        current_frame += 1
+    
+    cap.release()
+    
+    if frames:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        frames[0].save(
+            output_path, 
+            save_all=True, 
+            append_images=frames[1:], 
+            duration=int(1000/fps), 
+            loop=0
+        )
+        return True
+    return False
+
+def extract_highlights_gifs(video_path, rep_history, exercise_type):
+    """Identify best and worst reps and extract them as GIFs"""
+    if not rep_history or len(rep_history) < 2:
+        return
+    
+    # Sort by points to find best and worst
+    sorted_reps = sorted(rep_history, key=lambda x: x['points'], reverse=True)
+    
+    best_rep = sorted_reps[0]
+    worst_rep = sorted_reps[-1]
+    
+    # Don't show if they are the same rep (e.g. only 1 rep done, but we checked length >= 2)
+    if best_rep['rep_number'] == worst_rep['rep_number']:
+        return
+
+    import tempfile
+    temp_dir = os.path.join(tempfile.gettempdir(), "athlete_highlights")
+    
+    best_gif_path = os.path.join(temp_dir, f"best_{exercise_type}.gif")
+    worst_gif_path = os.path.join(temp_dir, f"worst_{exercise_type}.gif")
+    
+    if extract_gif(video_path, best_rep['start_frame'], best_rep['end_frame'], best_gif_path):
+        st.session_state[f"{exercise_type}_best_rep_gif"] = best_gif_path
+        
+    if extract_gif(video_path, worst_rep['start_frame'], worst_rep['end_frame'], worst_gif_path):
+        st.session_state[f"{exercise_type}_worst_rep_gif"] = worst_gif_path
 
 def initialize_database():
     """Initialize database connection"""
@@ -384,6 +469,10 @@ def main_app():
         if st.button("📊 Dashboard", use_container_width=True):
             st.session_state.page = 'dashboard'
             st.rerun()
+
+        if st.button("📅 Activity Calendar", use_container_width=True):
+            st.session_state.page = 'heatmap'
+            st.rerun()
         
         if st.button("🏆 Leaderboard", use_container_width=True):
             st.session_state.page = 'leaderboard'
@@ -430,6 +519,35 @@ def show_db_update_notification(exercise_type, count, success=True):
     else:
         st.session_state[f'last_db_update_{exercise_type}'] = f"❌ Database update failed!"
         st.session_state[f'last_db_update_time_{exercise_type}'] = datetime.now().strftime("%H:%M:%S")
+
+def render_highlights_panel(exercise_type):
+    """Render the AI Highlights panel with GIFs for a specific exercise"""
+    best_key = f"{exercise_type}_best_rep_gif"
+    worst_key = f"{exercise_type}_worst_rep_gif"
+    
+    if st.session_state.get(best_key) or st.session_state.get(worst_key):
+        st.markdown("---")
+        st.markdown("## 🎬 AI Highlights")
+        
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            best_path = st.session_state.get(best_key)
+            if best_path and os.path.exists(best_path):
+                st.markdown("### 🌟 Best Rep")
+                st.image(best_path, use_container_width=True)
+                st.info("Perfect form detected! Keep this as your benchmark.")
+            else:
+                st.info("No Best Rep highlight available yet.")
+                
+        with col2:
+            worst_path = st.session_state.get(worst_key)
+            if worst_path and os.path.exists(worst_path):
+                st.markdown("### ⚠️ Area for Improvement")
+                st.image(worst_path, use_container_width=True)
+                st.warning("Review this rep to identify technical flaws.")
+            else:
+                st.info("No Worst Rep highlight available yet.")
 
 def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="medium"):
     """Process uploaded video file"""
@@ -508,7 +626,7 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
             frame_count += 1
             
             # Process frame
-            annotated_frame, status = st.session_state.detector.process_frame(frame)
+            annotated_frame, status = st.session_state.detector.process_frame(frame, frame_index=frame_count)
             
             # Update session stats
             if status['jump_count'] > st.session_state.session_stats['total_jumps']:
@@ -651,6 +769,11 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
             st.warning("⏹️ Processing stopped by user")
         else:
             st.success(f"✅ Processing complete! Processed {frame_count} frames. Total jumps: {st.session_state.session_stats['total_jumps']}")
+            
+            # Extract highlights
+            if not should_stop and hasattr(st.session_state.detector, 'rep_history'):
+                with st.spinner("🎬 Extracting AI Highlights (Best & Worst Reps)..."):
+                    extract_highlights_gifs(temp_path, st.session_state.detector.rep_history, 'jump')
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -912,6 +1035,8 @@ def main_app_jump(db):
                 # Map dropdown selection to internal value
                 jump_height_value = "low" if "Low" in jump_height else ("high" if "High" in jump_height else "medium")
                 process_video_file(uploaded_file, db, calibration_frames, jump_height_value)
+        
+        render_highlights_panel('jump')
     
     else:  # Camera
         st.info("💡 Position yourself in front of the camera. Click 'Start Processing' to begin live jump detection!")
@@ -990,6 +1115,8 @@ def main_app_squat(db):
             
             if start_button:
                 process_squat_video_file(uploaded_file, db, calibration_frames)
+        
+        render_highlights_panel('squat')
     
     else:  # Camera
         st.info("💡 Position yourself in front of the camera. Click 'Start Processing' to begin live squat detection!")
@@ -1087,7 +1214,7 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
             frame_count += 1
             
             # Process frame
-            annotated_frame, status = st.session_state.squat_detector.process_frame(frame)
+            annotated_frame, status = st.session_state.squat_detector.process_frame(frame, frame_index=frame_count)
             
             # Update session stats
             if status['squat_count'] > st.session_state.session_stats['total_squats']:
@@ -1225,6 +1352,11 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
             st.warning("⏹️ Processing stopped by user")
         else:
             st.success(f"✅ Processing complete! Processed {frame_count} frames. Total squats: {st.session_state.session_stats['total_squats']}")
+            
+            # Extract highlights
+            if not should_stop and hasattr(st.session_state.squat_detector, 'rep_history'):
+                with st.spinner("🎬 Extracting AI Highlights (Best & Worst Reps)..."):
+                    extract_highlights_gifs(temp_path, st.session_state.squat_detector.rep_history, 'squat')
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -1480,6 +1612,8 @@ def main_app_pushup(db):
             
             if start_button:
                 process_pushup_video_file(uploaded_file, db, calibration_frames)
+        
+        render_highlights_panel('pushup')
     
     else:  # Camera
         st.info("💡 Position yourself in front of the camera in push-up position. Click 'Start Processing' to begin live push-up detection!")
@@ -1577,7 +1711,7 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
             frame_count += 1
             
             # Process frame
-            annotated_frame, status = st.session_state.pushup_detector.process_frame(frame)
+            annotated_frame, status = st.session_state.pushup_detector.process_frame(frame, frame_index=frame_count)
             
             # Update session stats
             if status['pushup_count'] > st.session_state.session_stats['total_pushups']:
@@ -1721,6 +1855,11 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
             st.warning("⏹️ Processing stopped by user")
         else:
             st.success(f"✅ Processing complete! Processed {frame_count} frames. Total push-ups: {st.session_state.session_stats['total_pushups']}")
+            
+            # Extract highlights
+            if not should_stop and hasattr(st.session_state.pushup_detector, 'rep_history'):
+                with st.spinner("🎬 Extracting AI Highlights (Best & Worst Reps)..."):
+                    extract_highlights_gifs(temp_path, st.session_state.pushup_detector.rep_history, 'pushup')
         
     except Exception as e:
         st.error(f"Error processing video: {str(e)}")
@@ -2519,6 +2658,8 @@ else:
         leaderboard_page()
     elif st.session_state.page == 'dashboard':
         dashboard_page()
+    elif st.session_state.page == 'heatmap':
+        heatmap_page()
     elif st.session_state.page == 'trainbot':
         trainbot_page()
     elif st.session_state.page == 'recommendations':

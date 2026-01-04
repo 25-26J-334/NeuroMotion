@@ -46,6 +46,8 @@ class JumpDetector:
         self.danger_detected = False
         self.current_jump_warnings = []
         self.current_jump_bad_moves = 0
+        self.rep_history = []
+        self.rep_start_frame = None
         # Ensure jump_height is preserved (don't reset it - it's a configuration, not state)
         if not hasattr(self, 'jump_height') or self.jump_height is None:
             self.jump_height = "medium"  # Default fallback
@@ -135,7 +137,7 @@ class JumpDetector:
         # Count bad moves (each warning type counts as 1)
         self.current_jump_bad_moves = len(set(self.current_jump_warnings))
     
-    def process_frame(self, frame) -> Tuple[np.ndarray, Dict]:
+    def process_frame(self, frame, frame_index=None) -> Tuple[np.ndarray, Dict]:
         """
         Process a single frame and return annotated frame and status
         
@@ -270,6 +272,7 @@ class JumpDetector:
                 # When trigger point goes above yellow line = jump detected
                 if not self.jumping and self.smoothed_trigger_y < self.jump_threshold:
                     self.jumping = True
+                    self.rep_start_frame = frame_index
                     status['status_text'] = "Jumping ↑"
                     self.current_jump_warnings = []
                     self.current_jump_bad_moves = 0
@@ -282,6 +285,14 @@ class JumpDetector:
                     # Calculate points: 10 points per jump, -2 per bad move
                     points = 10 - (self.current_jump_bad_moves * 2)
                     points = max(0, points)  # No negative points
+                    
+                    # Record rep history
+                    self.rep_history.append({
+                        'rep_number': self.jump_count,
+                        'start_frame': self.rep_start_frame,
+                        'end_frame': frame_index,
+                        'points': points
+                    })
                     
                     status['jump_count'] = self.jump_count
                     status['status_text'] = f"Landed ✓ ({self.jump_count} jumps)"
