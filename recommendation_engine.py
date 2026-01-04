@@ -170,6 +170,9 @@ class RecommendationEngine:
         recommendations.sort(key=lambda x: self._priority_value(x['priority']), reverse=True)
         self._save_recommendations(recommendations)
         
+        # Save performance analytics for tracking historical trends
+        self.save_performance_analytics(user_id, performance)
+        
         return recommendations
     
     def _generate_exercise_recommendations(self, user_id: int, session_id: Optional[int], 
@@ -320,7 +323,20 @@ class RecommendationEngine:
         
         cursor = self.connection.cursor()
         
+        # Check for existing recommendations today to avoid duplicates
+        today = datetime.now().strftime('%Y-%m-%d')
+        
         for rec in recommendations:
+            # Check if similar recommendation already exists for this user today
+            check_query = """
+            SELECT recommendation_id FROM training_recommendations
+            WHERE user_id = ? AND title = ? AND DATE(created_at) = ?
+            LIMIT 1
+            """
+            cursor.execute(check_query, (rec['user_id'], rec['title'], today))
+            if cursor.fetchone():
+                continue
+
             query = """
             INSERT INTO training_recommendations 
             (user_id, session_id, recommendation_type, priority, title, description, 
@@ -383,9 +399,20 @@ class RecommendationEngine:
             return
         
         cursor = self.connection.cursor()
+        today = datetime.now().strftime('%Y-%m-%d')
         
         for exercise_type, perf_data in performance.items():
             if isinstance(perf_data, dict) and 'total_reps' in perf_data:
+                # Check for existing analytics today
+                check_query = """
+                SELECT analytics_id FROM user_performance_analytics
+                WHERE user_id = ? AND exercise_type = ? AND DATE(analysis_date) = ?
+                LIMIT 1
+                """
+                cursor.execute(check_query, (user_id, exercise_type, today))
+                if cursor.fetchone():
+                    continue
+
                 query = """
                 INSERT INTO user_performance_analytics 
                 (user_id, analysis_date, exercise_type, total_reps, avg_points_per_rep,

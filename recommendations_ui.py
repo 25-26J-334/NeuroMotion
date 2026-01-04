@@ -5,6 +5,7 @@ UI Components for displaying training recommendations
 import streamlit as st
 import plotly.express as px
 import plotly.graph_objects as go
+import pandas as pd
 from datetime import datetime, timedelta
 from recommendation_engine import RecommendationEngine
 from database import Database
@@ -346,70 +347,127 @@ def display_recommendation_card(recommendation: dict, index: int, priority: str)
         st.markdown("---")
 
 def display_performance_charts(analytics: dict, user_id: int, db: Database):
-    """Display performance trend charts"""
+    """Display enhanced performance trend charts"""
     
     # Get historical data
     historical_data = db.get_user_performance_analytics(user_id, days=30)
     
-    if historical_data:
-        # Create performance trend chart
-        fig = go.Figure()
-        
-        # Add lines for each exercise type
-        exercise_types = ['jumps', 'squats', 'pushups']
-        colors = ['#00A8E8', '#F28500', '#228B22']  # Blue, Orange, Green (Neon)
-        
-        for i, exercise_type in enumerate(exercise_types):
-            exercise_data = [d for d in historical_data if d['exercise_type'] == exercise_type]
-            if exercise_data:
-                dates = [d['analysis_date'] for d in exercise_data]
-                scores = [d['performance_score'] for d in exercise_data]
-                
-                fig.add_trace(go.Scatter(
-                    x=dates,
-                    y=scores,
-                    mode='lines+markers',
-                    name=exercise_type.title(),
-                    line=dict(color=colors[i])
-                ))
-        
-        fig.update_layout(
-            title="Performance Score Trends (Last 30 Days)",
-            xaxis_title="Date",
-            yaxis_title="Performance Score (0-100)",
-            hovermode='x unified'
-        )
-        
-        st.plotly_chart(fig, use_container_width=True, key="recommendations_trend_chart")
+    if not historical_data:
+        st.info("📈 Once you complete more training sessions, your detailed performance trends will appear here!")
+        return
+
+    # Convert to DataFrame for easier manipulation
+    df = pd.DataFrame(historical_data)
+    df['analysis_date'] = pd.to_datetime(df['analysis_date'])
     
-    # Current performance radar chart
-    if analytics:
-        current_scores = {}
-        for exercise_type in ['jumps', 'squats', 'pushups']:
-            if exercise_type in analytics and isinstance(analytics[exercise_type], dict):
-                current_scores[exercise_type] = analytics[exercise_type].get('performance_score', 0)
+    # Chart colors (Neon theme)
+    colors = {
+        'jumps': '#00F3FF',    # Neon Cyan
+        'squats': '#FF00E5',   # Neon Pink/Magenta
+        'pushups': '#ADFF2F',  # GreenYellow (Bright Neon)
+        'performance': '#00FF00',
+        'fatigue': '#FF3131'
+    }
+
+    # Layout with columns for side-by-side charts
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # 1. Exercise Balance (Donut Chart)
+        st.markdown("#### ⚖️ Exercise Balance")
+        balance_data = df.groupby('exercise_type')['total_reps'].sum().reset_index()
+        fig_balance = px.pie(
+            balance_data, 
+            values='total_reps', 
+            names='exercise_type',
+            hole=0.6,
+            color='exercise_type',
+            color_discrete_map=colors,
+            template="plotly_dark"
+        )
+        fig_balance.update_traces(textposition='inside', textinfo='percent+label')
+        fig_balance.update_layout(
+            margin=dict(t=30, b=0, l=0, r=0),
+            height=300,
+            showlegend=False
+        )
+        st.plotly_chart(fig_balance, use_container_width=True, key="rec_balance_donut")
+
+    with col2:
+        # 2. Performance Comparison (Radar Chart)
+        st.markdown("#### 🎯 Current Mastery")
+        avg_scores = df.groupby('exercise_type')['performance_score'].mean().reset_index()
+        fig_radar = go.Figure()
+        fig_radar.add_trace(go.Scatterpolar(
+            r=avg_scores['performance_score'],
+            theta=avg_scores['exercise_type'].str.title(),
+            fill='toself',
+            line=dict(color='#00F3FF', width=2),
+            fillcolor='rgba(0, 243, 255, 0.3)'
+        ))
+        fig_radar.update_layout(
+            polar=dict(radialaxis=dict(visible=True, range=[0, 100], gridcolor="#444")),
+            template="plotly_dark",
+            margin=dict(t=30, b=30, l=40, r=40),
+            height=300,
+            showlegend=False
+        )
+        st.plotly_chart(fig_radar, use_container_width=True, key="rec_radar_mastery")
+
+    # 3. Growth Trajectory (Stacked Area Chart)
+    st.markdown("#### 🚀 Growth Trajectory (Cumulative Reps)")
+    df_growth = df.copy()
+    df_growth = df_growth.sort_values('analysis_date')
+    
+    # Pivot for stacked area
+    pivot_df = df_growth.pivot(index='analysis_date', columns='exercise_type', values='total_reps').fillna(0)
+    pivot_df = pivot_df.cumsum() # Cumulative growth
+    
+    fig_growth = go.Figure()
+    for et in pivot_df.columns:
+        hex_color = colors.get(et, '#FFFFFF').lstrip('#')
+        rgb = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        rgba_color = f'rgba({rgb[0]}, {rgb[1]}, {rgb[2]}, 0.5)'
         
-        if current_scores:
-            fig = go.Figure()
-            
-            fig.add_trace(go.Scatterpolar(
-                r=list(current_scores.values()),
-                theta=list(current_scores.keys()),
-                fill='toself',
-                name='Current Performance'
-            ))
-            
-            fig.update_layout(
-                polar=dict(
-                    radialaxis=dict(
-                        visible=True,
-                        range=[0, 100]
-                    )),
-                showlegend=True,
-                title="Current Performance by Exercise Type"
-            )
-            
-            st.plotly_chart(fig, use_container_width=True, key="recommendations_radar_chart")
+        fig_growth.add_trace(go.Scatter(
+            x=pivot_df.index,
+            y=pivot_df[et],
+            name=et.title(),
+            stackgroup='one',
+            line=dict(width=0.5, color=colors.get(et, '#FFFFFF')),
+            fillcolor=rgba_color
+        ))
+    
+    fig_growth.update_layout(
+        template="plotly_dark",
+        xaxis_title="Timeline",
+        yaxis_title="Total Cumulative Repetitions",
+        height=400,
+        margin=dict(t=20, b=20, l=20, r=20),
+        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    )
+    st.plotly_chart(fig_growth, use_container_width=True, key="rec_growth_area")
+
+    # 4. Quality vs Intensity Matrix (Heatmap)
+    st.markdown("#### 🌡️ Quality vs Intensity Matrix")
+    # We'll use marker size for intensity and color for quality
+    fig_matrix = px.scatter(
+        df,
+        x="total_reps",
+        y="performance_score",
+        color="performance_score",
+        size="total_reps",
+        hover_name="exercise_type",
+        color_continuous_scale="Viridis",
+        template="plotly_dark",
+        labels={"total_reps": "Intensity (Reps)", "performance_score": "Quality Score"}
+    )
+    fig_matrix.update_layout(
+        height=400,
+        margin=dict(t=20, b=20, l=0, r=0),
+        coloraxis_showscale=False
+    )
+    st.plotly_chart(fig_matrix, use_container_width=True, key="rec_quality_matrix")
 
 def mark_recommendation_completed(recommendation_id: int):
     """Mark a recommendation as completed"""
