@@ -202,15 +202,6 @@ def render_performance_prediction_panel(exercise_type: str):
     if pred.history_points >= 3:
         st.markdown("#### 😴 Fatigue Detection")
         
-        # Debug info
-        st.write(f"Debug: Exercise type = {pred_ex}")
-        st.write(f"Debug: Has trend = {hasattr(pred, 'trend')}")
-        st.write(f"Debug: Has trend_strength = {hasattr(pred, 'trend_strength')}")
-        if hasattr(pred, 'trend'):
-            st.write(f"Debug: Trend = {pred.trend}")
-        if hasattr(pred, 'trend_strength'):
-            st.write(f"Debug: Trend strength = {pred.trend_strength}")
-        
         # Calculate fatigue metrics
         fatigue_score = calculate_fatigue_score(pred)
         fatigue_level = get_fatigue_level(fatigue_score)
