@@ -11,11 +11,6 @@ from database import Database
 def heatmap_page():
     """Display the activity heatmap page"""
     
-    # Back button
-    if st.button("← Back to Training"):
-        st.session_state.page = 'main'
-        st.rerun()
-
     st.title("📅 Activity Calendar")
     st.markdown("---")
 

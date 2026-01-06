@@ -1,11 +1,19 @@
 /* Global Font Import */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Poppins:wght@500;600;700&display=swap');
 
-/* Apply Fonts to Streamlit Config */
+/* Apply Fonts and Global Background */
 html,
 body,
 [class*="css"] {
     font-family: 'Inter', sans-serif;
+}
+
+.stApp {
+    background-color: #00050D;
+    background-image:
+        radial-gradient(circle at 10% 20%, rgba(0, 168, 232, 0.1) 0%, transparent 20%),
+        radial-gradient(circle at 90% 80%, rgba(0, 168, 232, 0.05) 0%, transparent 20%);
+    background-attachment: fixed;
 }
 
 h1,
@@ -133,7 +141,7 @@ section[data-testid="stSidebar"] .stCaption {
     color: rgba(224, 244, 255, 0.6) !important;
     font-size: 0.9rem;
     font-family: 'Inter', sans-serif;
-    margin-bottom: 2rem;
+    margin-bottom: 1rem;
 }
 
 /* Sidebar Section Headers */

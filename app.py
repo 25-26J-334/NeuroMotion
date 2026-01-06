@@ -19,6 +19,8 @@ from pushup_detector import PushupDetector
 from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
 from heatmap_ui import heatmap_page
+from report_generator import ReportGenerator
+import groq
 
 # Fatigue Detection Helper Functions
 def calculate_fatigue_score(pred):
@@ -608,40 +610,84 @@ def user_registration():
     
     with st.form("user_registration"):
         name = st.text_input("Name", placeholder="Enter your name")
-        age = st.number_input("Age", min_value=1, max_value=120, value=18)
+        age = st.number_input("Age", min_value=10, max_value=120, value=20)
         submit = st.form_submit_button("Start Training", use_container_width=True)
         
         if submit:
-            if name and age:
-                # Check if user already exists
-                existing_user = db.get_user_by_name_age(name, age)
-                
-                if existing_user:
-                    # Login existing user
-                    st.session_state.user_id = existing_user['user_id']
-                    st.session_state.user_name = existing_user['name']
-                    st.session_state.user_age = existing_user['age']
-                    st.success(f"Welcome back, {name}! Let's continue training!")
+            if name:
+                user_id = db.create_user(name, age)
+                if user_id:
+                    st.session_state.user_id = user_id
+                    st.session_state.user_name = name
+                    st.session_state.user_age = age
+                    st.success(f"Welcome, {name}! Let's start training.")
+                    time.sleep(1)
+                    st.rerun()
                 else:
-                    # Create new user
-                    user_id = db.create_user(name, age)
-                    
-                    if user_id:
-                        st.session_state.user_id = user_id
-                        st.session_state.user_name = name
-                        st.session_state.user_age = age
-                        st.success(f"Welcome, {name}! Let's start training!")
-                    else:
-                        st.error("Failed to create user. Please check database connection.")
-                        return
-                
-                st.rerun()
+                    st.error("Registration failed. Please try again.")
             else:
-                st.warning("Please fill in all fields")
+                st.warning("Please enter your name.")
+
+def render_sidebar(db):
+    """Render a persistent sidebar available across all pages"""
+    with st.sidebar:
+        st.title(f"👤 {st.session_state.user_name}")
+        st.caption(f"Age: {st.session_state.user_age}")
+        
+        # Exercise Type Dropdown (Styled as a button)
+        with st.expander("🏃 Exercise Type", expanded=False):
+            if st.button("🏃 Jump Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'jump' and st.session_state.page == 'main' else "secondary"):
+                st.session_state.page = 'main'
+                st.session_state.exercise_type = 'jump'
+                st.session_state.session_id = None
+                st.session_state.detector = None
+                st.rerun()
+            
+            if st.button("🦵 Squat Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'squat' and st.session_state.page == 'main' else "secondary"):
+                st.session_state.page = 'main'
+                st.session_state.exercise_type = 'squat'
+                st.session_state.session_id = None
+                st.session_state.detector = None
+                st.rerun()
+            
+            if st.button("💪 Push-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'pushup' and st.session_state.page == 'main' else "secondary"):
+                st.session_state.page = 'main'
+                st.session_state.exercise_type = 'pushup'
+                st.session_state.session_id = None
+                st.session_state.detector = None
+                st.rerun()
+        
+        if st.button("📊 Performance Dashboard", use_container_width=True, type="primary" if st.session_state.page == 'dashboard' else "secondary"):
+            st.session_state.page = 'dashboard'
+            st.rerun()
+
+        if st.button("🎯 Training Plans", use_container_width=True, type="primary" if st.session_state.page == 'recommendations' else "secondary"):
+            st.session_state.page = 'recommendations'
+            st.rerun()
+
+        if st.button("🤖 AI TrainBot", use_container_width=True, type="primary" if st.session_state.page == 'trainbot' else "secondary"):
+            st.session_state.page = 'trainbot'
+            st.rerun()
+            
+        if st.button("📅 Activity Calendar", use_container_width=True, type="primary" if st.session_state.page == 'heatmap' else "secondary"):
+            st.session_state.page = 'heatmap'
+            st.rerun()
+        
+        if st.button("🏆 Leaderboard", use_container_width=True, type="primary" if st.session_state.page == 'leaderboard' else "secondary"):
+            st.session_state.page = 'leaderboard'
+            st.rerun()
+        
+        if st.button("🚪 Logout", use_container_width=True):
+            if st.session_state.session_id:
+                db.end_session(st.session_state.session_id, st.session_state.session_stats['total_jumps'], 
+                             st.session_state.session_stats['total_points'], st.session_state.session_stats['total_bad_moves'],
+                             st.session_state.session_stats.get('total_squats', 0), st.session_state.session_stats.get('total_pushups', 0))
+            for key in list(st.session_state.keys()):
+                del st.session_state[key]
+            st.rerun()
 
 def main_app():
     """Main application interface"""
-    load_css()
     db = initialize_database()
     if db is None:
         st.error("Database connection lost. Please refresh the page.")
@@ -650,115 +696,6 @@ def main_app():
                 del st.session_state.db
             st.rerun()
         return
-    
-    # Sidebar
-    with st.sidebar:
-        st.title(f"👤 {st.session_state.user_name}")
-        st.caption(f"Age: {st.session_state.user_age}")
-        
-        # Exercise Type Expander
-        with st.expander("Exercise Type", expanded=False):
-            if st.button("🏃 Jump Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'jump' else "secondary"):
-                st.session_state.exercise_type = 'jump'
-                st.session_state.session_id = None
-                st.session_state.session_start_time = None
-                st.session_state.detector = None
-                st.session_state.squat_detector = None
-                st.session_state.pushup_detector = None
-                st.session_state.performance_prediction = None
-                st.session_state.performance_prediction_exercise = None
-                st.session_state.session_stats = {
-                    'total_jumps': 0,
-                    'total_squats': 0,
-                    'total_pushups': 0,
-                    'total_points': 0,
-                    'total_bad_moves': 0,
-                    'jumps_data': [],
-                    'squats_data': [],
-                    'pushups_data': []
-                }
-                st.rerun()
-            
-            if st.button("🦵 Squat Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'squat' else "secondary"):
-                st.session_state.exercise_type = 'squat'
-                st.session_state.session_id = None
-                st.session_state.session_start_time = None
-                st.session_state.detector = None
-                st.session_state.squat_detector = None
-                st.session_state.pushup_detector = None
-                st.session_state.performance_prediction = None
-                st.session_state.performance_prediction_exercise = None
-                st.session_state.session_stats = {
-                    'total_jumps': 0,
-                    'total_squats': 0,
-                    'total_pushups': 0,
-                    'total_points': 0,
-                    'total_bad_moves': 0,
-                    'jumps_data': [],
-                    'squats_data': [],
-                    'pushups_data': []
-                }
-                st.rerun()
-            
-            if st.button("💪 Push-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'pushup' else "secondary"):
-                st.session_state.exercise_type = 'pushup'
-                st.session_state.session_id = None
-                st.session_state.session_start_time = None
-                st.session_state.detector = None
-                st.session_state.squat_detector = None
-                st.session_state.pushup_detector = None
-                st.session_state.performance_prediction = None
-                st.session_state.performance_prediction_exercise = None
-                st.session_state.session_stats = {
-                    'total_jumps': 0,
-                    'total_squats': 0,
-                    'total_pushups': 0,
-                    'total_points': 0,
-                    'total_bad_moves': 0,
-                    'jumps_data': [],
-                    'squats_data': [],
-                    'pushups_data': []
-                }
-                st.rerun()
-        
-
-        
-        if st.button("📊 Dashboard", use_container_width=True):
-            st.session_state.page = 'dashboard'
-            st.rerun()
-
-        if st.button("📅 Activity Calendar", use_container_width=True):
-            st.session_state.page = 'heatmap'
-            st.rerun()
-        
-        if st.button("🏆 Leaderboard", use_container_width=True):
-            st.session_state.page = 'leaderboard'
-            st.rerun()
-        
-        if st.button("🎯 TrainPlans", use_container_width=True):
-            st.session_state.page = 'recommendations'
-            st.rerun()
-        
-        if st.button("🤖 TrainBot", use_container_width=True):
-            st.session_state.page = 'trainbot'
-            st.rerun()
-        
-        if st.button("🚪 Logout", use_container_width=True):
-            # End current session if active
-            if st.session_state.session_id:
-                db.end_session(
-                    st.session_state.session_id,
-                    st.session_state.session_stats['total_jumps'],
-                    st.session_state.session_stats['total_points'],
-                    st.session_state.session_stats['total_bad_moves'],
-                    st.session_state.session_stats.get('total_squats', 0),
-                    st.session_state.session_stats.get('total_pushups', 0)
-                )
-            
-            # Clear session state
-            for key in list(st.session_state.keys()):
-                del st.session_state[key]
-            st.rerun()
     
     # Main content area - route based on exercise type
     if st.session_state.exercise_type == 'squat':
@@ -2383,11 +2320,6 @@ def process_pushup_live_camera(db, calibration_frames=100):
 
 def leaderboard_page():
     """Display leaderboard with separate sections for each exercise"""
-    # Back button at the top
-    if st.button("← Back to Training"):
-        st.session_state.page = 'main'
-        st.rerun()
-    
     st.title("🏆 Leaderboards")
     
     db = initialize_database()
@@ -2532,12 +2464,7 @@ def leaderboard_page():
 
 def dashboard_page():
     """Display comprehensive dashboard with statistics and charts"""
-    # Back button at the top
-    if st.button("← Back to Training"):
-        st.session_state.page = 'main'
-        st.rerun()
-    
-    st.title("📊 Dashboard")
+    st.title("📊 Personalized Fitness Dashboard")
     
     db = initialize_database()
     if db is None:
@@ -2845,7 +2772,53 @@ def dashboard_page():
             st.info("Complete a training session to see your statistics!")
 
 def get_trainbot_response(user_message):
-    """Generate TrainBot response based on user input"""
+    """Generate TrainBot response based on LLM or fallback rule-based system"""
+    # Even more robust check for Groq API Key
+    api_key = st.secrets.get('GROQ_API_KEY')
+    if not api_key:
+        # Check every section in secrets
+        for section in st.secrets:
+            try:
+                # Some versions of Streamlit secrets don't like 'in' but allow get
+                section_data = st.secrets[section]
+                if hasattr(section_data, 'get'):
+                    api_key = section_data.get('GROQ_API_KEY')
+                    if api_key: break
+            except:
+                continue
+    
+    groq_client = None
+    if api_key:
+        try:
+            groq_client = groq.Groq(api_key=api_key)
+        except Exception as e:
+            print(f"Error initializing Groq client: {e}")
+
+    if groq_client:
+        try:
+            # Prepare context about the user's exercises if available
+            db = Database() # Use Database class to get fresh connection
+            context = ""
+            if st.session_state.user_id:
+                stats = db.get_user_stats(st.session_state.user_id)
+                if stats:
+                    context = f" User stats: {stats['total_sessions']} sessions, {stats['total_jumps']} jumps, {stats['total_points']} points."
+            
+            completion = groq_client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=[
+                    {"role": "system", "content": f"You are TrainBot, an AI Fitness Assistant. You help athletes with exercises like jumps, squats, and push-ups. You provide tips, motivation, and form advice. Keep responses helpful and encouraging.{context}"},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.7,
+                max_tokens=1024,
+            )
+            return completion.choices[0].message.content
+        except Exception as e:
+            print(f"Groq API error: {e}")
+            # Fallback to rule-based if API fails
+    
+    # Rule-based fallback (original implementation)
     message_lower = user_message.lower().strip()
     
     # Greetings and introductions
@@ -2906,19 +2879,79 @@ def get_trainbot_response(user_message):
 
 def trainbot_page():
     """TrainBot chat interface"""
-    # Back button at the top
-    if st.button("← Back to Training"):
-        st.session_state.page = 'main'
-        st.rerun()
+    # Custom CSS for Premium Chat UI
+    st.markdown("""
+    <style>
+    .trainbot-header {
+        background: linear-gradient(135deg, #001229 0%, #002D5C 100%);
+        padding: 30px;
+        border-radius: 15px;
+        margin-bottom: 25px;
+        border: 1px solid rgba(0, 168, 232, 0.2);
+        text-align: center;
+        box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+    }
+    .status-badge {
+        display: inline-block;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 0.8rem;
+        font-weight: 600;
+        margin-bottom: 15px;
+    }
+    .status-active { background: rgba(0, 255, 127, 0.15); color: #00FF7F; border: 1px solid rgba(0, 255, 127, 0.3); }
+    .status-inactive { background: rgba(255, 165, 0, 0.15); color: #FFA500; border: 1px solid rgba(255, 165, 0, 0.3); }
     
-    st.title("🤖 TrainBot - Your AI Fitness Assistant")
-    st.markdown("Chat with TrainBot to get fitness tips, exercise information, and motivation!")
+    [data-testid="stChatMessage"] { background-color: transparent !important; border: none !important; }
+    [data-testid="stChatMessageContent"] { padding: 15px 20px !important; border-radius: 18px !important; }
+    [data-testid="stChatMessage"]:nth-child(even) [data-testid="stChatMessageContent"] {
+        background: linear-gradient(135deg, #00A8E8 0%, #007EA7 100%) !important;
+        color: white !important;
+        border-bottom-right-radius: 4px !important;
+    }
+    [data-testid="stChatMessage"]:nth-child(odd) [data-testid="stChatMessageContent"] {
+        background-color: #001229 !important;
+        color: #E0F4FF !important;
+        border: 1px solid rgba(0, 168, 232, 0.2) !important;
+        border-bottom-left-radius: 4px !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    # Robust check for Groq API Key
+    api_key_detected = st.secrets.get('GROQ_API_KEY')
+    found_in_section = "Root"
+    if not api_key_detected:
+        for section in st.secrets:
+            try:
+                section_data = st.secrets[section]
+                if hasattr(section_data, 'get'):
+                    api_key_detected = section_data.get('GROQ_API_KEY')
+                    if api_key_detected:
+                        found_in_section = section
+                        break
+            except:
+                continue
+
+    # Page Header
+    status_class = "status-active" if api_key_detected else "status-inactive"
+    status_text = f"✨ LLaMA 3 ACTIVE ({found_in_section})" if api_key_detected else "⚠️ RULE-BASED MODE"
     
+    st.markdown(f"""
+    <div class="trainbot-header">
+        <div class="status-badge {status_class}">{status_text}</div>
+        <h1 style="margin: 0; font-size: 2.5rem; color: #FFFFFF;">🤖 TrainBot AI</h1>
+        <p style="color: #aaaaaa; margin-top: 10px; font-size: 1.1rem;">
+            Your personal elite performance coach. Ask anything about technique, nutrition, or recovery.
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
     # Initialize chat history with welcome message
     if len(st.session_state.chat_history) == 0:
         st.session_state.chat_history.append({
             "role": "assistant",
-            "content": "Hello! I'm TrainBot, your AI fitness assistant! 👋 How can I help you today?"
+            "content": "Hello! I'm TrainBot, your elite performance coach. 👋 I've analyzed your recent sessions—how can I help you level up today?"
         })
     
     # Display chat history
@@ -2926,37 +2959,210 @@ def trainbot_page():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
-    # Chat input
-    if prompt := st.chat_input("Ask TrainBot anything about fitness, exercises, or training..."):
-        # Add user message to chat history
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
-        
-        # Display user message
-        with st.chat_message("user"):
-            st.markdown(prompt)
-        
-        # Get bot response
-        response = get_trainbot_response(prompt)
-        
-        # Add bot response to chat history
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
-        
-        # Display bot response
-        with st.chat_message("assistant"):
-            st.markdown(response)
-        
-        # Rerun to update the chat
-        st.rerun()
+    # AI Quick Actions Toolbar with Card-Style Buttons
+    st.markdown("---")
+    st.markdown("##### ⚡ AI Quick Actions")
     
-    # Clear chat button
-    if st.button("🗑️ Clear Chat", use_container_width=True):
-        st.session_state.chat_history = []
+    # Initialize click states
+    if 'report_clicked' not in st.session_state:
+        st.session_state.report_clicked = False
+    if 'workout_clicked' not in st.session_state:
+        st.session_state.workout_clicked = False
+    
+    # Custom CSS for card-style layout
+    st.markdown("""
+    <style>
+    .card-container {
+        display: flex;
+        gap: 20px;
+        margin: 20px 0;
+    }
+    .action-card-wrapper {
+        flex: 1;
+        cursor: pointer;
+    }
+    .action-card {
+        background: linear-gradient(135deg, #00A8E8 0%, #0077B6 100%);
+        border-radius: 20px;
+        padding: 25px 30px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        transition: all 0.3s ease;
+        min-height: 80px;
+    }
+    .action-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    }
+    .action-card.purple {
+        background: linear-gradient(135deg, #E6D5FF 0%, #C8B6FF 100%);
+    }
+    .action-card-content {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    .action-card-text {
+        color: white;
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .action-card.purple .action-card-text {
+        color: #2D1B4E;
+    }
+    .action-card-icon {
+        font-size: 2.5rem;
+        opacity: 0.8;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Display cards - Check for card clicks via query params
+    query_params = st.query_params
+    if 'action' in query_params:
+        action = query_params['action']
+        if action == 'report':
+            st.session_state.report_clicked = True
+            st.query_params.clear()
+        elif action == 'workout':
+            st.session_state.workout_clicked = True
+            st.query_params.clear()
+    
+    # Display the cards with JavaScript click handlers using components
+    import streamlit.components.v1 as components
+    
+    components.html("""
+    <style>
+    .card-container {
+        display: flex;
+        gap: 20px;
+        margin: 20px 0;
+    }
+    .action-card-wrapper {
+        flex: 1;
+        cursor: pointer;
+    }
+    .action-card {
+        background: linear-gradient(135deg, #00A8E8 0%, #0077B6 100%);
+        border-radius: 20px;
+        padding: 25px 30px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+        transition: all 0.3s ease;
+        min-height: 80px;
+    }
+    .action-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
+    }
+    .action-card.purple {
+        background: linear-gradient(135deg, #E6D5FF 0%, #C8B6FF 100%);
+    }
+    .action-card-content {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    .action-card-text {
+        color: white;
+        font-size: 1.2rem;
+        font-weight: 600;
+        margin: 0;
+    }
+    .action-card.purple .action-card-text {
+        color: #2D1B4E;
+    }
+    .action-card-icon {
+        font-size: 2.5rem;
+        opacity: 0.8;
+    }
+    </style>
+    
+    <div class="card-container">
+        <div class="action-card-wrapper" onclick="window.parent.location.search='?action=report'">
+            <div class="action-card">
+                <div class="action-card-content">
+                    <span>📑</span>
+                    <span class="action-card-text">Training Report</span>
+                </div>
+                <div class="action-card-icon">📊</div>
+            </div>
+        </div>
+        
+        <div class="action-card-wrapper" onclick="window.parent.location.search='?action=workout'">
+            <div class="action-card purple">
+                <div class="action-card-content">
+                    <span>🗓️</span>
+                    <span class="action-card-text">Workout Plan</span>
+                </div>
+                <div class="action-card-icon">💪</div>
+            </div>
+        </div>
+    </div>
+    """, height=150)
+    
+    # Handle Training Report
+    if st.session_state.report_clicked:
+        st.session_state.report_clicked = False
+        db = initialize_database()
+        report_gen = ReportGenerator()
+        has_groq = api_key_detected
+        
+        if has_groq:
+            with st.spinner("🔍 Analyzing your performance..."):
+                stats = db.get_user_stats(st.session_state.user_id)
+                recent_sessions = db.get_recent_sessions(st.session_state.user_id, limit=5)
+                prompt = f"Analyze this athlete's performance and write a professional training report. Stats: {stats}. Recent sessions: {recent_sessions}."
+                report_content = get_trainbot_response(prompt)
+                filepath, filename = report_gen.create_pdf_report(st.session_state.user_name, report_content, "Training Report")
+                with open(filepath, "rb") as f:
+                    st.download_button("📥 Download Training Report PDF", data=f, file_name=filename, mime="application/pdf", key="dl_report")
+                st.success("✅ Training Report generated successfully!")
+        else: 
+            st.error("⚠️ Groq API Key missing. Please configure GROQ_API_KEY in secrets.toml")
+    
+    # Handle Workout Plan
+    if st.session_state.workout_clicked:
+        st.session_state.workout_clicked = False
+        db = initialize_database()
+        report_gen = ReportGenerator()
+        has_groq = api_key_detected
+        
+        if has_groq:
+            with st.spinner("🎯 Designing your personalized plan..."):
+                stats = db.get_user_stats(st.session_state.user_id)
+                prompt = f"Create a 7-day workout plan for an athlete with these stats: {stats}."
+                plan_content = get_trainbot_response(prompt)
+                filepath, filename = report_gen.create_pdf_report(st.session_state.user_name, plan_content, "Workout Plan")
+                with open(filepath, "rb") as f:
+                    st.download_button("📥 Download Workout Plan PDF", data=f, file_name=filename, mime="application/pdf", key="dl_workout")
+                st.success("✅ Workout Plan generated successfully!")
+        else: 
+            st.error("⚠️ Groq API Key missing. Please configure GROQ_API_KEY in secrets.toml")
+
+    # Chat input
+    if prompt := st.chat_input("Message TrainBot Coach..."):
+        st.session_state.chat_history.append({"role": "user", "content": prompt})
+        response = get_trainbot_response(prompt)
+        st.session_state.chat_history.append({"role": "assistant", "content": response})
         st.rerun()
 
 # Main app logic
 if st.session_state.user_id is None:
     user_registration()
 else:
+    # Global setup
+    load_css()
+    db = initialize_database()
+    
+    # Sidebar
+    render_sidebar(db)
+    
     # Determine current page
     if 'page' not in st.session_state:
         st.session_state.page = 'main'

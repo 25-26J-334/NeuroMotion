@@ -142,11 +142,6 @@ def recommendations_page():
     if 'show_detailed_recommendation' not in st.session_state:
         st.session_state.show_detailed_recommendation = None
     
-    # Back button at the top
-    if st.button("← Back to Training"):
-        st.session_state.page = 'main'
-        st.rerun()
-    
     # Show detailed recommendation if one is selected
     if st.session_state.show_detailed_recommendation:
         show_detailed_recommendation_full_page(st.session_state.show_detailed_recommendation)
