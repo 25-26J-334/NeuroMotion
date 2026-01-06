@@ -145,6 +145,12 @@ for ex in ['jump', 'squat', 'pushup']:
         st.session_state[f'{ex}_best_rep_gif'] = None
     if f'{ex}_worst_rep_gif' not in st.session_state:
         st.session_state[f'{ex}_worst_rep_gif'] = None
+if 'report_clicked' not in st.session_state:
+    st.session_state.report_clicked = False
+if 'workout_clicked' not in st.session_state:
+    st.session_state.workout_clicked = False
+if 'diet_clicked' not in st.session_state:
+    st.session_state.diet_clicked = False
 
 def update_performance_prediction(db, exercise_type: str, current_count: int):
     if not st.session_state.user_id:
@@ -657,7 +663,7 @@ def render_sidebar(db):
                 st.session_state.detector = None
                 st.rerun()
         
-        if st.button("📊 Performance Dashboard", use_container_width=True, type="primary" if st.session_state.page == 'dashboard' else "secondary"):
+        if st.button("📊 Dashboard", use_container_width=True, type="primary" if st.session_state.page == 'dashboard' else "secondary"):
             st.session_state.page = 'dashboard'
             st.rerun()
 
@@ -2773,19 +2779,41 @@ def dashboard_page():
 
 def get_trainbot_response(user_message):
     """Generate TrainBot response based on LLM or fallback rule-based system"""
-    # Even more robust check for Groq API Key
+    # Check for Groq API Key in multiple locations
+    api_key = None
+    found_in_section = "Not found"
+    
+    # Direct check first
     api_key = st.secrets.get('GROQ_API_KEY')
-    if not api_key:
-        # Check every section in secrets
-        for section in st.secrets:
-            try:
-                # Some versions of Streamlit secrets don't like 'in' but allow get
-                section_data = st.secrets[section]
-                if hasattr(section_data, 'get'):
-                    api_key = section_data.get('GROQ_API_KEY')
-                    if api_key: break
-            except:
-                continue
+    if api_key:
+        found_in_section = "Direct"
+    else:
+        # Check in groq section
+        try:
+            if 'groq' in st.secrets:
+                api_key = st.secrets.groq.get('api_key')
+                if api_key:
+                    found_in_section = "Groq section"
+        except:
+            pass
+        
+        # Fallback: check every section
+        if not api_key:
+            for section in st.secrets:
+                try:
+                    section_data = st.secrets[section]
+                    if hasattr(section_data, 'get'):
+                        api_key = section_data.get('GROQ_API_KEY')
+                        if api_key:
+                            found_in_section = f"Section '{section}'"
+                            break
+                        # Also check for 'api_key' in case it's named differently
+                        api_key = section_data.get('api_key')
+                        if api_key:
+                            found_in_section = f"Section '{section}' (api_key)"
+                            break
+                except:
+                    continue
     
     groq_client = None
     if api_key:
@@ -2796,27 +2824,304 @@ def get_trainbot_response(user_message):
 
     if groq_client:
         try:
-            # Prepare context about the user's exercises if available
+            # Prepare COMPREHENSIVE system and DATABASE analysis about user
             db = Database() # Use Database class to get fresh connection
-            context = ""
+            comprehensive_context = ""
             if st.session_state.user_id:
-                stats = db.get_user_stats(st.session_state.user_id)
-                if stats:
-                    context = f" User stats: {stats['total_sessions']} sessions, {stats['total_jumps']} jumps, {stats['total_points']} points."
+                try:
+                    # Get ALL user data from entire system
+                    stats = db.get_user_stats(st.session_state.user_id)
+                    
+                    # Get recent sessions for ALL exercise types
+                    recent_sessions = db.get_recent_sessions(st.session_state.user_id, limit=20)
+                    
+                    # Get current performance prediction if available
+                    pred = st.session_state.get('performance_prediction')
+                    pred_ex = st.session_state.get('performance_prediction_exercise')
+                    
+                    # === ENTIRE DATABASE ANALYSIS ===
+                    try:
+                        # Get comprehensive database statistics
+                        all_users_stats = db.get_all_users_stats() if hasattr(db, 'get_all_users_stats') else None
+                        all_sessions = db.get_all_sessions() if hasattr(db, 'get_all_sessions') else None
+                        leaderboard_data = db.get_leaderboard(limit=100) if hasattr(db, 'get_leaderboard') else []
+                        
+                        database_insights = []
+                        
+                        if all_users_stats:
+                            total_users = len(all_users_stats)
+                            total_sessions_db = sum(user.get('total_sessions', 0) for user in all_users_stats)
+                            total_points_db = sum(user.get('total_points', 0) for user in all_users_stats)
+                            total_jumps_db = sum(user.get('total_jumps', 0) for user in all_users_stats)
+                            total_squats_db = sum(user.get('total_squats', 0) for user in all_users_stats)
+                            total_pushups_db = sum(user.get('total_pushups', 0) for user in all_users_stats)
+                            
+                            database_insights.append(f"DATABASE OVERVIEW: {total_users} total athletes, {total_sessions_db} total sessions, {total_points_db} total points scored")
+                            database_insights.append(f"EXERCISE TOTALS: {total_jumps_db} jumps, {total_squats_db} squats, {total_pushups_db} push-ups across all users")
+                            
+                            if total_users > 0:
+                                avg_sessions_per_user = total_sessions_db / total_users
+                                avg_points_per_user = total_points_db / total_users
+                                database_insights.append(f"USER AVERAGES: {avg_sessions_per_user:.1f} sessions/user, {avg_points_per_user:.1f} points/user")
+                        
+                        if all_sessions:
+                            # Analyze exercise popularity
+                            jump_sessions_db = [s for s in all_sessions if s.get('exercise_type') == 'jump']
+                            squat_sessions_db = [s for s in all_sessions if s.get('exercise_type') == 'squat'] 
+                            pushup_sessions_db = [s for s in all_sessions if s.get('exercise_type') == 'pushup']
+                            
+                            database_insights.append(f"EXERCISE POPULARITY: {len(jump_sessions_db)} jump sessions, {len(squat_sessions_db)} squat sessions, {len(pushup_sessions_db)} push-up sessions")
+                            
+                            # Find best performances in database
+                            if all_sessions:
+                                best_jump_session = max([s for s in jump_sessions_db if s.get('points')], key=lambda x: x.get('points', 0))
+                                best_squat_session = max([s for s in squat_sessions_db if s.get('points')], key=lambda x: x.get('points', 0))
+                                best_pushup_session = max([s for s in pushup_sessions_db if s.get('points')], key=lambda x: x.get('points', 0))
+                                
+                                if best_jump_session and best_jump_session.get('points'):
+                                    database_insights.append(f"BEST JUMP: {best_jump_session.get('points')} points")
+                                if best_squat_session and best_squat_session.get('points'):
+                                    database_insights.append(f"BEST SQUAT: {best_squat_session.get('points')} points")
+                                if best_pushup_session and best_pushup_session.get('points'):
+                                    database_insights.append(f"BEST PUSH-UP: {best_pushup_session.get('points')} points")
+                        
+                        if leaderboard_data:
+                            # Leaderboard analysis
+                            if len(leaderboard_data) > 0:
+                                top_performer = leaderboard_data[0]
+                                total_points_in_leaderboard = sum(user.get('total_points', 0) for user in leaderboard_data)
+                                avg_leaderboard_points = total_points_in_leaderboard / len(leaderboard_data)
+                                
+                                database_insights.append(f"LEADERBOARD: Top score {top_performer.get('total_points', 0)}, Average {avg_leaderboard_points:.1f} points")
+                                
+                                # Performance distribution analysis
+                                high_performers = [u for u in leaderboard_data if u.get('total_points', 0) > avg_leaderboard_points]
+                                database_insights.append(f"PERFORMANCE DIST: {len(high_performers)} users above average ({len(high_performers)/len(leaderboard_data)*100:.1f}%)")
+                        
+                        # Add database insights to context
+                        if database_insights:
+                            database_context = "DATABASE ANALYSIS: " + " | ".join(database_insights) + ". "
+                        else:
+                            database_context = "DATABASE ANALYSIS: Limited data available. "
+                    except Exception as db_error:
+                        print(f"Database analysis error: {db_error}")
+                        database_context = "DATABASE ANALYSIS: Temporarily unavailable. "
+                    
+                    # Build COMPREHENSIVE context from ALL system modules
+                    context_parts = []
+                    
+                    # === BASIC USER PROFILE ===
+                    if stats:
+                        context_parts.append(f"USER PROFILE: {stats['total_sessions']} total sessions, {stats.get('total_jumps', 0)} jumps, {stats.get('total_squats', 0)} squats, {stats.get('total_pushups', 0)} push-ups, {stats['total_points']} total points, {stats.get('total_bad_moves', 0)} bad moves detected")
+                    
+                    # Add database context first for broader perspective
+                    if database_context:
+                        context_parts.append(database_context)
+                    
+                    # === EXERCISE-SPECIFIC ANALYSIS ===
+                    if recent_sessions:
+                        # Analyze by exercise type
+                        jump_sessions = [s for s in recent_sessions if s.get('exercise_type') == 'jump']
+                        squat_sessions = [s for s in recent_sessions if s.get('exercise_type') == 'squat']
+                        pushup_sessions = [s for s in recent_sessions if s.get('exercise_type') == 'pushup']
+                        
+                        context_parts.append(f"EXERCISE BREAKDOWN: {len(jump_sessions)} jump sessions, {len(squat_sessions)} squat sessions, {len(pushup_sessions)} push-up sessions")
+                        
+                        # Performance by exercise type
+                        for ex_type, sessions, ex_name in [
+                            (jump_sessions, 'jump'), 
+                            (squat_sessions, 'squat'), 
+                            (pushup_sessions, 'pushup')
+                        ]:
+                            if sessions:
+                                ex_points = [s.get('points', 0) for s in sessions]
+                                ex_errors = [s.get('bad_moves', 0) for s in sessions]
+                                ex_reps = [s.get('reps', 0) for s in sessions if s.get('reps')]
+                                
+                                if ex_points:
+                                    avg_points = sum(ex_points) / len(ex_points)
+                                    best_session = max(ex_points)
+                                    context_parts.append(f"{ex_name.upper()}: Avg {avg_points:.1f} pts, Best {best_session} pts, {sum(ex_reps)} total reps")
+                                
+                                if ex_errors:
+                                    avg_errors = sum(ex_errors) / len(ex_errors)
+                                    error_rate = (avg_errors / max(sum(ex_points), 1)) * 100
+                                    context_parts.append(f"{ex_name.upper()} Errors: {avg_errors:.1f} avg, {error_rate:.1f}% error rate")
+                    
+                    # === DASHBOARD METRICS ===
+                    if stats:
+                        # Performance metrics from dashboard
+                        avg_points_per_session = stats['total_points'] / max(stats['total_sessions'], 1)
+                        overall_error_rate = (stats.get('total_bad_moves', 0) / max(stats['total_points'], 1)) * 100
+                        context_parts.append(f"DASHBOARD INSIGHTS: {avg_points_per_session:.1f} avg pts/session, {overall_error_rate:.1f}% overall error rate")
+                        
+                        # Performance rating
+                        if stats['total_points'] > 0:
+                            performance_grade = "Excellent" if avg_points_per_session > 80 else "Good" if avg_points_per_session > 60 else "Needs Improvement"
+                            context_parts.append(f"Performance Grade: {performance_grade}")
+                    
+                    # === TRAINING PLANS ANALYSIS ===
+                    try:
+                        # Check if user has training recommendations
+                        from recommendations_ui import get_user_recommendations
+                        recommendations = get_user_recommendations(st.session_state.user_id, db)
+                        if recommendations:
+                            context_parts.append(f"TRAINING PLANS: {len(recommendations)} active recommendations available")
+                            # Analyze recommendation types
+                            rec_types = [r.get('type', 'general') for r in recommendations]
+                            if rec_types:
+                                context_parts.append(f"Plan Focus: {', '.join(set(rec_types))}")
+                        else:
+                            context_parts.append("TRAINING PLANS: No personalized plans generated yet")
+                    except Exception as rec_error:
+                        print(f"Training plans analysis error: {rec_error}")
+                        context_parts.append("TRAINING PLANS: Analysis temporarily unavailable")
+                    
+                    # === ACTIVITY CALENDAR INSIGHTS ===
+                    try:
+                        # Get activity pattern data
+                        if recent_sessions:
+                            # Analyze training frequency and patterns
+                            from datetime import datetime, timedelta
+                            session_dates = [s.get('session_date') for s in recent_sessions if s.get('session_date')]
+                            if session_dates:
+                                # Calculate training frequency
+                                unique_days = len(set(session_dates))
+                                total_days = (datetime.now() - min(session_dates)).days + 1
+                                frequency = unique_days / total_days * 7  # sessions per week
+                                context_parts.append(f"ACTIVITY CALENDAR: {frequency:.1f} training days/week, {unique_days} active days")
+                                
+                                # Identify training patterns
+                                if len(session_dates) >= 3:
+                                    recent_streak = 0
+                                    for i in range(len(session_dates) - 1):
+                                        if (session_dates[i] - session_dates[i+1]).days == 1:
+                                            recent_streak += 1
+                                        else:
+                                            break
+                                    if recent_streak > 0:
+                                        context_parts.append(f"Current Streak: {recent_streak} consecutive days")
+                    except Exception as cal_error:
+                        print(f"Calendar analysis error: {cal_error}")
+                        context_parts.append("ACTIVITY CALENDAR: Pattern analysis temporarily unavailable")
+                    
+                    # === LEADERBOARD POSITION ===
+                    try:
+                        # Get leaderboard data
+                        all_users = db.get_leaderboard(limit=50) if hasattr(db, 'get_leaderboard') else []
+                        if all_users:
+                            user_rank = next((i+1 for i, user in enumerate(all_users) if user.get('user_id') == st.session_state.user_id), None)
+                            total_users = len(all_users)
+                            
+                            if user_rank:
+                                percentile = (total_users - user_rank) / total_users * 100
+                                context_parts.append(f"LEADERBOARD: Rank #{user_rank}/{total_users} (Top {percentile:.0f}%)")
+                            else:
+                                context_parts.append("LEADERBOARD: Not ranked yet")
+                            
+                            # Top performer comparison
+                            if len(all_users) > 0:
+                                top_user = all_users[0]
+                                user_points = stats.get('total_points', 0)
+                                top_points = top_user.get('total_points', 0)
+                                gap = top_points - user_points
+                                context_parts.append(f"Gap to Leader: {gap} points")
+                        else:
+                            context_parts.append("LEADERBOARD: Data temporarily unavailable")
+                    except Exception as lb_error:
+                        print(f"Leaderboard analysis error: {lb_error}")
+                        context_parts.append("LEADERBOARD: Ranking temporarily unavailable")
+                    
+                    # === PERFORMANCE PREDICTIONS ===
+                    if pred and pred_ex:
+                        fatigue_score = calculate_fatigue_score(pred) if hasattr(pred, 'history_points') else 0
+                        fatigue_level = get_fatigue_level(fatigue_score)
+                        
+                        context_parts.append(f"PREDICTION ({pred_ex}): Speed {pred.predicted_speed_rpm:.1f} reps/min, Endurance {pred.predicted_endurance_score:.0f}/100, Rating {pred.predicted_rating:.0f}/100")
+                        context_parts.append(f"FATIGUE ANALYSIS: Level {fatigue_level} ({fatigue_score:.1f}/100), Trend: {pred.trend}")
+                        
+                        if hasattr(pred, 'confidence_interval'):
+                            context_parts.append(f"Expected Range: {pred.confidence_interval['lower']:.1f} - {pred.confidence_interval['upper']:.1f}")
+                        
+                        # Training load recommendations
+                        if hasattr(pred, 'forecast') and pred.forecast:
+                            best_load = max(pred.forecast, key=lambda x: x.get('pred_rating', 0))
+                            context_parts.append(f"Optimal Training Load: {best_load.get('training_load', 1.0)*100:.0f}% intensity")
+                    
+                    # === CURRENT SESSION STATUS ===
+                    if st.session_state.get('session_stats'):
+                        session_stats = st.session_state.session_stats
+                        context_parts.append(f"CURRENT SESSION: {session_stats.get('total_jumps', 0)} jumps, {session_stats.get('total_squats', 0)} squats, {session_stats.get('total_pushups', 0)} push-ups, {session_stats.get('total_points', 0)} points")
+                    
+                    # === SYSTEM-WIDE INSIGHTS ===
+                    context_parts.append("SYSTEM SCOPE: Analyzing entire database, all user sessions, performance trends, leaderboard data, training plans, activity patterns, predictions, and real-time session data")
+                    
+                    comprehensive_context = " COMPREHENSIVE DATABASE & SYSTEM ANALYSIS: " + " | ".join(context_parts) + ". "
+                    
+                except Exception as e:
+                    print(f"Error gathering comprehensive context: {e}")
+                    # Fallback to basic user info if comprehensive analysis fails
+                    try:
+                        basic_stats = db.get_user_stats(st.session_state.user_id)
+                        if basic_stats:
+                            comprehensive_context = f" BASIC USER DATA: {basic_stats['total_sessions']} sessions, {basic_stats.get('total_jumps', 0)} jumps, {basic_stats.get('total_squats', 0)} squats, {basic_stats.get('total_pushups', 0)} push-ups, {basic_stats['total_points']} total points. "
+                        else:
+                            comprehensive_context = " Limited user data available. "
+                    except:
+                        comprehensive_context = " User data temporarily unavailable. "
             
-            completion = groq_client.chat.completions.create(
-                model="llama3-8b-8192",
-                messages=[
-                    {"role": "system", "content": f"You are TrainBot, an AI Fitness Assistant. You help athletes with exercises like jumps, squats, and push-ups. You provide tips, motivation, and form advice. Keep responses helpful and encouraging.{context}"},
-                    {"role": "user", "content": user_message}
-                ],
-                temperature=0.7,
-                max_tokens=1024,
-            )
-            return completion.choices[0].message.content
+            # Try primary model first, then fallback if needed
+            models_to_try = ["llama3-8b-8192", "llama-3.1-8b-instant", "llama3-70b-8192"]
+            
+            for model_name in models_to_try:
+                try:
+                    completion = groq_client.chat.completions.create(
+                        model=model_name,
+                        messages=[
+                            {"role": "system", "content": f"You are TrainBot, an ELITE AI PERFORMANCE ANALYST with access to the COMPLETE athletic training system. You analyze data from ALL modules: jump sessions, squat sessions, push-up sessions, performance dashboard, training plans, activity calendar, leaderboard, fatigue detection, and performance predictions. Provide comprehensive, data-driven insights that connect patterns across all system components. Give specific, actionable advice based on their complete athletic profile. Analyze strengths, weaknesses, trends, and provide holistic recommendations.{comprehensive_context}"},
+                            {"role": "user", "content": user_message}
+                        ],
+                        temperature=0.7,
+                        max_tokens=1024,
+                    )
+                    response = completion.choices[0].message.content
+                    # Store success info for UI feedback
+                    st.session_state.last_llm_response = True
+                    st.session_state.last_llm_source = f"LLaMA 3 ({model_name})"
+                    return response
+                except Exception as model_error:
+                    print(f"Model {model_name} failed: {model_error}")
+                    if model_name == models_to_try[-1]:  # Last model tried
+                        raise model_error
+                    continue
         except Exception as e:
             print(f"Groq API error: {e}")
+            # Store detailed error info for UI feedback
+            st.session_state.last_llm_response = False
+            error_str = str(e)
+            
+            # Parse common error types
+            if "400" in error_str:
+                if "api_key" in error_str.lower() or "unauthorized" in error_str.lower():
+                    st.session_state.last_llm_error = "Invalid API key - check your Groq API key"
+                elif "model" in error_str.lower():
+                    st.session_state.last_llm_error = "Model not available - check Groq model availability"
+                else:
+                    st.session_state.last_llm_error = f"Bad Request (400): {error_str[:100]}"
+            elif "401" in error_str:
+                st.session_state.last_llm_error = "Authentication failed - check your API key"
+            elif "429" in error_str:
+                st.session_state.last_llm_error = "Rate limit exceeded - try again later"
+            elif "500" in error_str:
+                st.session_state.last_llm_error = "Groq server error - try again later"
+            else:
+                st.session_state.last_llm_error = f"API Error: {error_str[:100]}"
+            
             # Fallback to rule-based if API fails
+    else:
+        # Store no API key info for UI feedback
+        st.session_state.last_llm_response = False
+        st.session_state.last_llm_error = "API key not configured"
     
     # Rule-based fallback (original implementation)
     message_lower = user_message.lower().strip()
@@ -2918,34 +3223,40 @@ def trainbot_page():
     </style>
     """, unsafe_allow_html=True)
 
-    # Robust check for Groq API Key
-    api_key_detected = st.secrets.get('GROQ_API_KEY')
-    found_in_section = "Root"
-    if not api_key_detected:
-        for section in st.secrets:
-            try:
-                section_data = st.secrets[section]
-                if hasattr(section_data, 'get'):
-                    api_key_detected = section_data.get('GROQ_API_KEY')
-                    if api_key_detected:
-                        found_in_section = section
-                        break
-            except:
-                continue
-
-    # Page Header
-    status_class = "status-active" if api_key_detected else "status-inactive"
-    status_text = f"✨ LLaMA 3 ACTIVE ({found_in_section})" if api_key_detected else "⚠️ RULE-BASED MODE"
+    # Check for Groq API Key using the same improved logic
+    api_key_detected = None
+    found_in_section = "Not found"
     
-    st.markdown(f"""
-    <div class="trainbot-header">
-        <div class="status-badge {status_class}">{status_text}</div>
-        <h1 style="margin: 0; font-size: 2.5rem; color: #FFFFFF;">🤖 TrainBot AI</h1>
-        <p style="color: #aaaaaa; margin-top: 10px; font-size: 1.1rem;">
-            Your personal elite performance coach. Ask anything about technique, nutrition, or recovery.
-        </p>
-    </div>
-    """, unsafe_allow_html=True)
+    # Direct check first
+    api_key_detected = st.secrets.get('GROQ_API_KEY')
+    if api_key_detected:
+        found_in_section = "Direct"
+    else:
+        # Check in groq section
+        try:
+            if 'groq' in st.secrets:
+                api_key_detected = st.secrets.groq.get('api_key')
+                if api_key_detected:
+                    found_in_section = "Groq section"
+        except:
+            pass
+        
+        # Fallback: check every section
+        if not api_key_detected:
+            for section in st.secrets:
+                try:
+                    section_data = st.secrets[section]
+                    if hasattr(section_data, 'get'):
+                        api_key_detected = section_data.get('GROQ_API_KEY')
+                        if api_key_detected:
+                            found_in_section = f"Section '{section}'"
+                            break
+                        api_key_detected = section_data.get('api_key')
+                        if api_key_detected:
+                            found_in_section = f"Section '{section}' (api_key)"
+                            break
+                except:
+                    continue
 
     # Initialize chat history with welcome message
     if len(st.session_state.chat_history) == 0:
@@ -2959,30 +3270,63 @@ def trainbot_page():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
     
+    # System Analysis Section
+    with st.expander("📊 System Performance Analysis", expanded=False):
+        if st.button("🔍 Analyze My Performance", use_container_width=True, type="primary"):
+            with st.spinner("🧠 Analyzing your performance data..."):
+                try:
+                    db = Database()
+                    analysis_prompt = "Provide a comprehensive analysis of my athletic performance based on all my data. Include strengths, areas for improvement, fatigue patterns, and specific recommendations."
+                    
+                    # This will trigger the enhanced context gathering
+                    analysis_response = get_trainbot_response(analysis_prompt)
+                    
+                    st.session_state.chat_history.append({
+                        "role": "user", 
+                        "content": "🔍 Analyze my complete performance profile"
+                    })
+                    st.session_state.chat_history.append({
+                        "role": "assistant", 
+                        "content": analysis_response
+                    })
+                    st.rerun()
+                    
+                except Exception as e:
+                    st.error(f"Analysis failed: {e}")
+        
+        # Quick stats preview
+        try:
+            db = Database()
+            if st.session_state.user_id:
+                stats = db.get_user_stats(st.session_state.user_id)
+                if stats:
+                    col1, col2, col3, col4 = st.columns(4)
+                    with col1:
+                        st.metric("Sessions", stats['total_sessions'])
+                    with col2:
+                        st.metric("Total Points", stats['total_points'])
+                    with col3:
+                        error_rate = (stats.get('total_bad_moves', 0) / max(stats['total_points'], 1)) * 100
+                        st.metric("Error Rate", f"{error_rate:.1f}%")
+                    with col4:
+                        avg_points = stats['total_points'] / max(stats['total_sessions'], 1)
+                        st.metric("Avg Points/Session", f"{avg_points:.1f}")
+        except:
+            st.info("Complete some training sessions to see performance analysis")
+    
     # AI Quick Actions Toolbar with Card-Style Buttons
     st.markdown("---")
     st.markdown("##### ⚡ AI Quick Actions")
     
-    # Initialize click states
-    if 'report_clicked' not in st.session_state:
-        st.session_state.report_clicked = False
-    if 'workout_clicked' not in st.session_state:
-        st.session_state.workout_clicked = False
-    
-    # Custom CSS for card-style layout
+    # Custom CSS for card-style buttons
     st.markdown("""
     <style>
-    .card-container {
-        display: flex;
-        gap: 20px;
-        margin: 20px 0;
+    div[data-testid="stHorizontalBlock"] > div {
+        gap: 20px !important;
     }
-    .action-card-wrapper {
-        flex: 1;
-        cursor: pointer;
-    }
-    .action-card {
+    .card-button {
         background: linear-gradient(135deg, #00A8E8 0%, #0077B6 100%);
+        border: none;
         border-radius: 20px;
         padding: 25px 30px;
         display: flex;
@@ -2991,138 +3335,162 @@ def trainbot_page():
         box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
         transition: all 0.3s ease;
         min-height: 80px;
+        width: 100%;
+        cursor: pointer;
+        color: white;
+        font-size: 1.2rem;
+        font-weight: 600;
+        text-align: left;
     }
-    .action-card:hover {
+    .card-button:hover {
         transform: translateY(-5px);
         box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
     }
-    .action-card.purple {
+    .card-button.purple {
         background: linear-gradient(135deg, #E6D5FF 0%, #C8B6FF 100%);
+        color: #2D1B4E;
     }
-    .action-card-content {
+    .card-button.red {
+        background: linear-gradient(135deg, #FFE5E5 0%, #FFB3B3 100%);
+        border: 1px solid #FF9999;
+        color: #8B0000;
+    }
+    .card-button-content {
         display: flex;
         align-items: center;
         gap: 15px;
     }
-    .action-card-text {
-        color: white;
-        font-size: 1.2rem;
-        font-weight: 600;
-        margin: 0;
-    }
-    .action-card.purple .action-card-text {
-        color: #2D1B4E;
-    }
-    .action-card-icon {
+    .card-button-icon {
         font-size: 2.5rem;
         opacity: 0.8;
     }
     </style>
     """, unsafe_allow_html=True)
     
-    # Display cards - Check for card clicks via query params
-    query_params = st.query_params
-    if 'action' in query_params:
-        action = query_params['action']
-        if action == 'report':
+    # Use columns for layout
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        if st.button("📑 **Training Report** 📊", key="report_btn", use_container_width=True, help="Generate comprehensive training report"):
             st.session_state.report_clicked = True
-            st.query_params.clear()
-        elif action == 'workout':
+            st.rerun()
+    
+    with col2:
+        if st.button("🗓️ **Workout Plan** 💪", key="workout_btn", use_container_width=True, help="Get personalized workout plan"):
             st.session_state.workout_clicked = True
-            st.query_params.clear()
+            st.rerun()
     
-    # Display the cards with JavaScript click handlers using components
-    import streamlit.components.v1 as components
-    
-    components.html("""
-    <style>
-    .card-container {
-        display: flex;
-        gap: 20px;
-        margin: 20px 0;
-    }
-    .action-card-wrapper {
-        flex: 1;
-        cursor: pointer;
-    }
-    .action-card {
-        background: linear-gradient(135deg, #00A8E8 0%, #0077B6 100%);
-        border-radius: 20px;
-        padding: 25px 30px;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
-        transition: all 0.3s ease;
-        min-height: 80px;
-    }
-    .action-card:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-    }
-    .action-card.purple {
-        background: linear-gradient(135deg, #E6D5FF 0%, #C8B6FF 100%);
-    }
-    .action-card-content {
-        display: flex;
-        align-items: center;
-        gap: 15px;
-    }
-    .action-card-text {
-        color: white;
-        font-size: 1.2rem;
-        font-weight: 600;
-        margin: 0;
-    }
-    .action-card.purple .action-card-text {
-        color: #2D1B4E;
-    }
-    .action-card-icon {
-        font-size: 2.5rem;
-        opacity: 0.8;
-    }
-    </style>
-    
-    <div class="card-container">
-        <div class="action-card-wrapper" onclick="window.parent.location.search='?action=report'">
-            <div class="action-card">
-                <div class="action-card-content">
-                    <span>📑</span>
-                    <span class="action-card-text">Training Report</span>
-                </div>
-                <div class="action-card-icon">📊</div>
-            </div>
-        </div>
-        
-        <div class="action-card-wrapper" onclick="window.parent.location.search='?action=workout'">
-            <div class="action-card purple">
-                <div class="action-card-content">
-                    <span>🗓️</span>
-                    <span class="action-card-text">Workout Plan</span>
-                </div>
-                <div class="action-card-icon">💪</div>
-            </div>
-        </div>
-    </div>
-    """, height=150)
+    with col3:
+        if st.button("🥗 **Diet Plan** 🍎", key="diet_btn", use_container_width=True, help="Create nutrition plan"):
+            st.session_state.diet_clicked = True
+            st.rerun()
     
     # Handle Training Report
     if st.session_state.report_clicked:
         st.session_state.report_clicked = False
-        db = initialize_database()
+        db = Database()
         report_gen = ReportGenerator()
-        has_groq = api_key_detected
         
-        if has_groq:
-            with st.spinner("🔍 Analyzing your performance..."):
-                stats = db.get_user_stats(st.session_state.user_id)
-                recent_sessions = db.get_recent_sessions(st.session_state.user_id, limit=5)
-                prompt = f"Analyze this athlete's performance and write a professional training report. Stats: {stats}. Recent sessions: {recent_sessions}."
-                report_content = get_trainbot_response(prompt)
-                filepath, filename = report_gen.create_pdf_report(st.session_state.user_name, report_content, "Training Report")
-                with open(filepath, "rb") as f:
-                    st.download_button("📥 Download Training Report PDF", data=f, file_name=filename, mime="application/pdf", key="dl_report")
-                st.success("✅ Training Report generated successfully!")
+        # Check for API key properly
+        api_key = None
+        try:
+            api_key = st.secrets.get('GROQ_API_KEY')
+            if not api_key and 'groq' in st.secrets:
+                api_key = st.secrets.groq.get('api_key')
+        except:
+            pass
+        
+        if api_key:
+            with st.spinner("🔍 Generating comprehensive training report..."):
+                try:
+                    # Get comprehensive user data for report
+                    stats = db.get_user_stats(st.session_state.user_id)
+                    recent_sessions = db.get_recent_sessions(st.session_state.user_id, limit=10)
+                    
+                    # Get additional data for comprehensive report
+                    all_sessions = db.get_recent_sessions(st.session_state.user_id, limit=50)
+                    leaderboard_data = db.get_leaderboard(limit=100) if hasattr(db, 'get_leaderboard') else []
+                    
+                    # Analyze exercise-specific performance
+                    jump_sessions = [s for s in all_sessions if s.get('exercise_type') == 'jump']
+                    squat_sessions = [s for s in all_sessions if s.get('exercise_type') == 'squat']
+                    pushup_sessions = [s for s in all_sessions if s.get('exercise_type') == 'pushup']
+                    
+                    # Calculate performance metrics
+                    performance_grade = "Good"
+                    if stats and stats['total_sessions'] > 0:
+                        avg_points = stats['total_points'] / stats['total_sessions']
+                        if avg_points > 80:
+                            performance_grade = "Excellent"
+                        elif avg_points > 60:
+                            performance_grade = "Good"
+                        else:
+                            performance_grade = "Needs Improvement"
+                    
+                    # Get leaderboard position
+                    user_rank = "Not ranked"
+                    if leaderboard_data:
+                        rank = next((i+1 for i, user in enumerate(leaderboard_data) if user.get('user_id') == st.session_state.user_id), None)
+                        if rank:
+                            user_rank = f"#{rank}/{len(leaderboard_data)}"
+                    
+                    # Generate comprehensive report prompt
+                    report_prompt = f"""
+                    Generate a comprehensive training report for this athlete with the following data:
+                    
+                    ATHLETE PROFILE:
+                    - Name: {st.session_state.user_name}
+                    - Total Sessions: {stats['total_sessions'] if stats else 0}
+                    - Total Points: {stats['total_points'] if stats else 0}
+                    - Performance Grade: {performance_grade}
+                    - Leaderboard Position: {user_rank}
+                    
+                    EXERCISE BREAKDOWN:
+                    - Jump Sessions: {len(jump_sessions)} sessions
+                    - Squat Sessions: {len(squat_sessions)} sessions  
+                    - Push-up Sessions: {len(pushup_sessions)} sessions
+                    
+                    RECENT PERFORMANCE (Last 5 Sessions):
+                    {recent_sessions[:5] if recent_sessions else "No recent sessions"}
+                    
+                    Please provide a detailed training report including:
+                    1. Executive Summary of overall performance
+                    2. Strengths and areas of excellence
+                    3. Areas needing improvement
+                    4. Exercise-specific analysis and recommendations
+                    5. Performance trends and progress
+                    6. Specific training recommendations for next 4 weeks
+                    7. Goal setting and targets
+                    
+                    Format as a professional training report with clear sections and actionable insights.
+                    """
+                    
+                    report_content = get_trainbot_response(report_prompt)
+                    
+                    # Display report preview in chat
+                    st.subheader("📊 Your Training Report")
+                    st.markdown(report_content)
+                    
+                    # Create and offer PDF download
+                    try:
+                        filepath, filename = report_gen.create_pdf_report(st.session_state.user_name, report_content, "Comprehensive Training Report")
+                        with open(filepath, "rb") as f:
+                            st.download_button(
+                                "📥 Download Training Report PDF", 
+                                data=f, 
+                                file_name=filename, 
+                                mime="application/pdf", 
+                                key="dl_report",
+                                use_container_width=True
+                            )
+                        st.success("✅ Training Report generated successfully! Click the download button to save your PDF.")
+                    except Exception as pdf_error:
+                        st.warning("⚠️ PDF generation failed, but you can copy the report above")
+                        print(f"PDF generation error: {pdf_error}")
+                    
+                except Exception as e:
+                    st.error(f"❌ Report generation failed: {e}")
+                    print(f"Report generation error: {e}")
         else: 
             st.error("⚠️ Groq API Key missing. Please configure GROQ_API_KEY in secrets.toml")
     
@@ -3135,22 +3503,95 @@ def trainbot_page():
         
         if has_groq:
             with st.spinner("🎯 Designing your personalized plan..."):
-                stats = db.get_user_stats(st.session_state.user_id)
-                prompt = f"Create a 7-day workout plan for an athlete with these stats: {stats}."
-                plan_content = get_trainbot_response(prompt)
-                filepath, filename = report_gen.create_pdf_report(st.session_state.user_name, plan_content, "Workout Plan")
-                with open(filepath, "rb") as f:
-                    st.download_button("📥 Download Workout Plan PDF", data=f, file_name=filename, mime="application/pdf", key="dl_workout")
-                st.success("✅ Workout Plan generated successfully!")
+                try:
+                    stats = db.get_user_stats(st.session_state.user_id)
+                    prompt = f"Create a 7-day workout plan for an athlete with these stats: {stats}. Include specific exercises, sets, reps, and rest periods. Format as a professional workout plan with daily breakdown."
+                    plan_content = get_trainbot_response(prompt)
+                    
+                    # Display workout plan preview in chat
+                    st.subheader("💪 Your Workout Plan")
+                    st.markdown(plan_content)
+                    
+                    # Create and offer PDF download
+                    try:
+                        filepath, filename = report_gen.create_pdf_report(st.session_state.user_name, plan_content, "Workout Plan")
+                        with open(filepath, "rb") as f:
+                            st.download_button(
+                                "📥 Download Workout Plan PDF", 
+                                data=f, 
+                                file_name=filename, 
+                                mime="application/pdf", 
+                                key="dl_workout",
+                                use_container_width=True
+                            )
+                        st.success("✅ Workout Plan generated successfully! Click the download button to save your PDF.")
+                    except Exception as pdf_error:
+                        st.warning("⚠️ PDF generation failed, but you can copy the workout plan above")
+                        print(f"PDF generation error: {pdf_error}")
+                        
+                except Exception as e:
+                    st.error(f"❌ Workout plan generation failed: {e}")
+                    print(f"Workout plan generation error: {e}")
+        else: 
+            st.error("⚠️ Groq API Key missing. Please configure GROQ_API_KEY in secrets.toml")
+    
+    # Handle Diet Plan
+    if st.session_state.diet_clicked:
+        st.session_state.diet_clicked = False
+        db = initialize_database()
+        report_gen = ReportGenerator()
+        has_groq = api_key_detected
+        
+        if has_groq:
+            with st.spinner("🥗 Creating your personalized diet plan..."):
+                try:
+                    stats = db.get_user_stats(st.session_state.user_id)
+                    prompt = f"Create a 7-day diet plan for an athlete with these stats: {stats}. Include breakfast, lunch, dinner, and snacks. Focus on nutrition for athletic performance."
+                    plan_content = get_trainbot_response(prompt)
+                    
+                    # Display diet plan preview in chat
+                    st.subheader("🥗 Your Diet Plan")
+                    st.markdown(plan_content)
+                    
+                    # Create and offer PDF download
+                    try:
+                        filepath, filename = report_gen.create_pdf_report(st.session_state.user_name, plan_content, "Diet Plan")
+                        with open(filepath, "rb") as f:
+                            st.download_button(
+                                "📥 Download Diet Plan PDF", 
+                                data=f, 
+                                file_name=filename, 
+                                mime="application/pdf", 
+                                key="dl_diet",
+                                use_container_width=True
+                            )
+                        st.success("✅ Diet Plan generated successfully! Click the download button to save your PDF.")
+                    except Exception as pdf_error:
+                        st.warning("⚠️ PDF generation failed, but you can copy the diet plan above")
+                        print(f"PDF generation error: {pdf_error}")
+                        
+                except Exception as e:
+                    st.error(f"❌ Diet plan generation failed: {e}")
+                    print(f"Diet plan generation error: {e}")
         else: 
             st.error("⚠️ Groq API Key missing. Please configure GROQ_API_KEY in secrets.toml")
 
     # Chat input
-    if prompt := st.chat_input("Message TrainBot Coach..."):
-        st.session_state.chat_history.append({"role": "user", "content": prompt})
-        response = get_trainbot_response(prompt)
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
-        st.rerun()
+    # New Chat Button
+    col1, col2 = st.columns([1, 10])
+    with col1:
+        if st.button("➕", key="new_chat_btn", help="Start new chat", use_container_width=True):
+            st.session_state.chat_history = [{
+                "role": "assistant",
+                "content": "Hello! I'm TrainBot, your elite performance coach. 👋 I've analyzed your recent sessions—how can I help you level up today?"
+            }]
+            st.rerun()
+    with col2:
+        if prompt := st.chat_input("Message TrainBot Coach..."):
+            st.session_state.chat_history.append({"role": "user", "content": prompt})
+            response = get_trainbot_response(prompt)
+            st.session_state.chat_history.append({"role": "assistant", "content": response})
+            st.rerun()
 
 # Main app logic
 if st.session_state.user_id is None:
