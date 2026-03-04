@@ -80,6 +80,32 @@ def get_fatigue_color(fatigue_level):
     return colors.get(fatigue_level, "#FFFFFF")
 from performance_prediction import compute_performance_prediction
 import os
+import streamlit.components.v1 as components
+
+def trigger_voice_alert(text):
+    """Trigger a browser-based voice alert using Web Speech API"""
+    if not st.session_state.get('voice_alerts_enabled', False):
+        return
+        
+    # Rate limiting: 4 seconds between alerts
+    current_time = time.time()
+    last_alert_time = st.session_state.get('last_voice_alert_time', 0)
+    
+    if current_time - last_alert_time > 4:
+        st.session_state.last_voice_alert_time = current_time
+        # Use components.html to inject JavaScript for SpeechSynthesis
+        js_code = f"""
+            <script>
+            if ('speechSynthesis' in window) {{
+                const utterance = new SpeechSynthesisUtterance("{text}");
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                window.speechSynthesis.speak(utterance);
+            }}
+            </script>
+        """
+        # Render a tiny hidden component
+        components.html(js_code, height=0, width=0)
 
 def load_css():
     """Load custom CSS styles"""
@@ -132,6 +158,10 @@ if 'squat_detector' not in st.session_state:
     st.session_state.squat_detector = None
 if 'pushup_detector' not in st.session_state:
     st.session_state.pushup_detector = None
+if 'voice_alerts_enabled' not in st.session_state:
+    st.session_state.voice_alerts_enabled = False
+if 'last_voice_alert_time' not in st.session_state:
+    st.session_state.last_voice_alert_time = 0
 if 'page' not in st.session_state:
     st.session_state.page = 'main'
 if 'chat_history' not in st.session_state:
@@ -640,6 +670,8 @@ def render_sidebar(db):
         st.title(f"👤 {st.session_state.user_name}")
         st.caption(f"Age: {st.session_state.user_age}")
         
+        st.markdown("---")
+        
         # Exercise Type Dropdown (Styled as a button)
         with st.expander("🏃 Exercise Type", expanded=False):
             if st.button("🏃 Jump Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'jump' and st.session_state.page == 'main' else "secondary"):
@@ -919,6 +951,11 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
                 st.markdown("#### 🚨 Danger Status:")
                 if status['danger_detected']:
                     st.error("**DANGER DETECTED!**")
+                    if status['warnings']:
+                        msg = f"Postural warning: {', '.join(status['warnings'])}"
+                        trigger_voice_alert(msg)
+                    else:
+                        trigger_voice_alert("Danger detected. Check your posture.")
                 else:
                     st.success("**No Danger**")
                 
@@ -1144,6 +1181,11 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
                 st.markdown("#### 🚨 Danger Status:")
                 if status['danger_detected']:
                     st.error("**DANGER DETECTED!**")
+                    if status['warnings']:
+                        msg = f"Postural warning: {', '.join(status['warnings'])}"
+                        trigger_voice_alert(msg)
+                    else:
+                        trigger_voice_alert("Danger detected. Check your posture.")
                 else:
                     st.success("**No Danger**")
                 
@@ -1196,6 +1238,9 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
 def main_app_jump(db):
     """Main jump training interface"""
     st.title("🏃 Jump Training Session")
+    
+    # Voice Alerts Toggle
+    st.session_state.voice_alerts_enabled = st.toggle("🎙️ Enable Voice Alerts", value=st.session_state.voice_alerts_enabled, key="voice_toggle_jump")
     
     # Session stats display
     col1, col2, col3, col4 = st.columns(4)
@@ -1288,6 +1333,9 @@ def main_app_jump(db):
 def main_app_squat(db):
     """Main squat training interface"""
     st.title("🦵 Squat Training Session")
+    
+    # Voice Alerts Toggle
+    st.session_state.voice_alerts_enabled = st.toggle("🎙️ Enable Voice Alerts", value=st.session_state.voice_alerts_enabled, key="voice_toggle_squat")
     
     # Session stats display
     col1, col2, col3, col4 = st.columns(4)
@@ -1523,6 +1571,11 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
                 st.markdown("#### 🚨 Danger Status:")
                 if status['danger_detected']:
                     st.error("**DANGER DETECTED!**")
+                    if status['warnings']:
+                        msg = f"Postural warning: {', '.join(status['warnings'])}"
+                        trigger_voice_alert(msg)
+                    else:
+                        trigger_voice_alert("Danger detected. Check your posture.")
                 else:
                     st.success("**No Danger**")
                 
@@ -1739,6 +1792,11 @@ def process_squat_live_camera(db, calibration_frames=100):
                 st.markdown("#### 🚨 Danger Status:")
                 if status['danger_detected']:
                     st.error("**DANGER DETECTED!**")
+                    if status['warnings']:
+                        msg = f"Postural warning: {', '.join(status['warnings'])}"
+                        trigger_voice_alert(msg)
+                    else:
+                        trigger_voice_alert("Danger detected. Check your posture.")
                 else:
                     st.success("**No Danger**")
                 
@@ -1801,6 +1859,9 @@ def process_squat_live_camera(db, calibration_frames=100):
 def main_app_pushup(db):
     """Main push-up training interface"""
     st.title("💪 Push-up Training Session")
+    
+    # Voice Alerts Toggle
+    st.session_state.voice_alerts_enabled = st.toggle("🎙️ Enable Voice Alerts", value=st.session_state.voice_alerts_enabled, key="voice_toggle_pushup")
     
     # Session stats display
     col1, col2, col3, col4 = st.columns(4)
@@ -2042,6 +2103,11 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
                 st.markdown("#### 🚨 Danger Status:")
                 if status['danger_detected']:
                     st.error("**DANGER DETECTED!**")
+                    if status['warnings']:
+                        msg = f"Postural warning: {', '.join(status['warnings'])}"
+                        trigger_voice_alert(msg)
+                    else:
+                        trigger_voice_alert("Danger detected. Check your posture.")
                 else:
                     st.success("**No Danger**")
                 
@@ -2265,6 +2331,11 @@ def process_pushup_live_camera(db, calibration_frames=100):
                 st.markdown("#### 🚨 Danger Status:")
                 if status['danger_detected']:
                     st.error("**DANGER DETECTED!**")
+                    if status['warnings']:
+                        msg = f"Postural warning: {', '.join(status['warnings'])}"
+                        trigger_voice_alert(msg)
+                    else:
+                        trigger_voice_alert("Danger detected. Check your posture.")
                 else:
                     st.success("**No Danger**")
                 
