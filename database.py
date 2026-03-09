@@ -380,6 +380,8 @@ class Database:
         SELECT 
             COUNT(DISTINCT s.session_id) as total_sessions,
             SUM(s.total_jumps) as total_jumps,
+            SUM(s.total_squats) as total_squats,
+            SUM(s.total_pushups) as total_pushups,
             SUM(s.total_points) as total_points,
             SUM(s.total_bad_moves) as total_bad_moves,
             AVG(s.total_points) as avg_points_per_session,
@@ -394,6 +396,8 @@ class Database:
             return {
                 'total_sessions': int(stats.get('total_sessions') or 0),
                 'total_jumps': int(stats.get('total_jumps') or 0),
+                'total_squats': int(stats.get('total_squats') or 0),
+                'total_pushups': int(stats.get('total_pushups') or 0),
                 'total_points': int(stats.get('total_points') or 0),
                 'total_bad_moves': int(stats.get('total_bad_moves') or 0),
                 'avg_points_per_session': float(stats.get('avg_points_per_session') or 0.0),

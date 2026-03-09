@@ -19,6 +19,7 @@ from pushup_detector import PushupDetector
 from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
 from heatmap_ui import heatmap_page
+from muscle_heatmap_ui import heatmap_page_v2 as muscle_heatmap_page
 from report_generator import ReportGenerator
 import groq
 
@@ -771,6 +772,10 @@ def render_sidebar(db):
             st.session_state.page = 'trainbot'
             st.rerun()
             
+        if st.button("🦾 3D Muscle Map", use_container_width=True, type="primary" if st.session_state.page == 'muscle_map' else "secondary"):
+            st.session_state.page = 'muscle_map'
+            st.rerun()
+
         if st.button("📅 Activity Calendar", use_container_width=True, type="primary" if st.session_state.page == 'heatmap' else "secondary"):
             st.session_state.page = 'heatmap'
             st.rerun()
@@ -1319,7 +1324,8 @@ def main_app_jump(db):
         avg_points = (st.session_state.session_stats['total_points'] / 
                      max(st.session_state.session_stats['total_jumps'], 1))
         st.metric("Avg Points/Jump", f"{avg_points:.1f}")
-    
+
+
     # Video input selection
     input_method = st.radio(
         "Select Input Method:",
@@ -1362,6 +1368,19 @@ def main_app_jump(db):
         
         if st.session_state.session_stats['total_jumps'] > 0:
             render_highlights_panel('jump')
+            
+            # Form Guide Expander
+            with st.expander("📖 Form Guide: Correct vs Incorrect Jump"):
+                guide_col1, guide_col2 = st.columns(2)
+                with guide_col1:
+                    st.markdown("#### ✅ Correct Form")
+                    st.video("https://www.youtube.com/watch?v=7Pxr4xOrhNk")
+                    st.markdown("- Land softly on balls of feet\n- Keep chest up\n- Core engaged")
+                with guide_col2:
+                    st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
+                    st.video("https://www.youtube.com/watch?v=s_KXOy7yZP0")
+                    st.markdown("- Landing heavy on heels\n- Knees caving in\n- Poor posture")
+            
             st.markdown("---")
             render_performance_prediction_panel('jump')
     
@@ -1414,7 +1433,8 @@ def main_app_squat(db):
         avg_points = (st.session_state.session_stats['total_points'] / 
                      max(st.session_state.session_stats['total_squats'], 1))
         st.metric("Avg Points/Squat", f"{avg_points:.1f}")
-    
+
+
     # Video input selection
     input_method = st.radio(
         "Select Input Method:",
@@ -1448,6 +1468,19 @@ def main_app_squat(db):
         
         if st.session_state.session_stats['total_squats'] > 0:
             render_highlights_panel('squat')
+            
+            # Form Guide Expander
+            with st.expander("📖 Form Guide: Correct vs Incorrect Squat"):
+                guide_col1, guide_col2 = st.columns(2)
+                with guide_col1:
+                    st.markdown("#### ✅ Correct Form")
+                    st.video("https://www.youtube.com/watch?v=dW3zj79xfrc")
+                    st.markdown("- Feet shoulder-width apart\n- Chest up, back straight\n- Knees track over toes")
+                with guide_col2:
+                    st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
+                    st.video("https://www.youtube.com/watch?v=T6id8FuUcao")
+                    st.markdown("- Knees caving in (Valgus)\n- Heels lifting off the ground\n- Rounding the lower back (Butt Wink)")
+            
             st.markdown("---")
             render_performance_prediction_panel('squat')
     
@@ -1917,7 +1950,8 @@ def main_app_pushup(db):
         avg_points = (st.session_state.session_stats['total_points'] / 
                      max(st.session_state.session_stats['total_pushups'], 1))
         st.metric("Avg Points/Push-up", f"{avg_points:.1f}")
-    
+
+
     # Video input selection
     input_method = st.radio(
         "Select Input Method:",
@@ -1951,6 +1985,19 @@ def main_app_pushup(db):
         
         if st.session_state.session_stats['total_pushups'] > 0:
             render_highlights_panel('pushup')
+            
+            # Form Guide Expander
+            with st.expander("📖 Form Guide: Correct vs Incorrect Push-up"):
+                guide_col1, guide_col2 = st.columns(2)
+                with guide_col1:
+                    st.markdown("#### ✅ Correct Form")
+                    st.video("https://www.youtube.com/watch?v=pKZ-lkKKMws")
+                    st.markdown("- Body in a straight line\n- Hands slightly wider than shoulders\n- Elbows tucked 45 degrees")
+                with guide_col2:
+                    st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
+                    st.video("https://www.youtube.com/watch?v=4Bc1tPaYkOo")
+                    st.markdown("- Flared elbows (T-shape)\n- Sagging hips/arched back\n- Partial range of motion")
+            
             st.markdown("---")
             render_performance_prediction_panel('pushup')
     
@@ -3703,6 +3750,8 @@ else:
         dashboard_page()
     elif st.session_state.page == 'heatmap':
         heatmap_page()
+    elif st.session_state.page == 'muscle_map':
+        muscle_heatmap_page()
     elif st.session_state.page == 'trainbot':
         trainbot_page()
     elif st.session_state.page == 'recommendations':
