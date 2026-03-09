@@ -902,6 +902,7 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
         progress_bar = st.progress(0)
         stop_button_placeholder = st.empty()
         posture_placeholder = posture_col.empty()
+        ribbon_placeholder = st.empty()
         
         frame_count = 0
         should_stop = False
@@ -991,37 +992,42 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
                 with info_col2:
                     st.markdown(f"**Status:** {status['status_text']}")
                 
-                st.markdown("---")
-                
-                # Fixed warnings section - always present, updates in place
-                st.markdown("#### ⚠️ Current Warnings:")
-                warnings_text = ""
+                st.markdown("#### ⚠️ Warnings")
                 if status['warnings']:
                     for warning in status['warnings']:
-                        warnings_text += f"🔴 {warning}\n\n"
+                        st.write(f"🔴 {warning}")
                 else:
-                    warnings_text = "✅ No warnings"
-                st.markdown(warnings_text)
-                
+                    st.write("✅ No warnings")
                 st.markdown("---")
+            
+            # Full-width Status Ribbon under video and posture box
+            with ribbon_placeholder.container():
+                st.markdown("### 📊 Live Performance Ribbon")
+                ribbon_col1, ribbon_col2, ribbon_col3 = st.columns(3)
                 
-                # Fixed bad moves section - always present
-                st.markdown("#### ❌ Bad Moves:")
-                st.markdown(f"**{status['bad_moves']}**")
+                with ribbon_col1:
+                    st.markdown("#### ❌ Bad Moves")
+                    st.markdown(f"## {status['bad_moves']}")
                 
-                st.markdown("---")
-                
-                # Fixed danger section - always present
-                st.markdown("#### 🚨 Danger Status:")
-                if status['danger_detected']:
-                    st.error("**DANGER DETECTED!**")
-                    if status['warnings']:
-                        msg = f"Postural warning: {', '.join(status['warnings'])}"
-                        trigger_voice_alert(msg)
+                with ribbon_col2:
+                    st.markdown("#### 🚨 Danger")
+                    if status['danger_detected']:
+                        st.error("DANGER!")
+                        if status['warnings']:
+                            msg = f"Postural warning: {', '.join(status['warnings'])}"
+                            trigger_voice_alert(msg)
+                        else:
+                            trigger_voice_alert("Danger detected. Check your posture.")
                     else:
-                        trigger_voice_alert("Danger detected. Check your posture.")
-                else:
-                    st.success("**No Danger**")
+                        st.success("Safe")
+                
+                with ribbon_col3:
+                    st.markdown("#### 🥇 Stats")
+                    stat_col1, stat_col2 = st.columns(2)
+                    with stat_col1:
+                        st.metric("Count", st.session_state.session_stats['total_jumps'])
+                    with stat_col2:
+                        st.metric("Points", st.session_state.session_stats['total_points'])
                 
                 st.markdown("---")
                 
@@ -1130,6 +1136,7 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
     frame_placeholder = video_col.empty()
     stop_button_placeholder = st.empty()
     posture_placeholder = posture_col.empty()
+    ribbon_placeholder = st.empty()
     
     st.info("📹 Live camera processing started! Position yourself in front of the camera. Click 'Start Processing' to begin live jump detection!")
     
@@ -1221,48 +1228,42 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
                 with info_col2:
                     st.markdown(f"**Status:** {status['status_text']}")
                 
-                st.markdown("---")
-                
-                # Fixed warnings section - always present, updates in place
-                st.markdown("#### ⚠️ Current Warnings:")
-                warnings_text = ""
+                st.markdown("#### ⚠️ Warnings")
                 if status['warnings']:
                     for warning in status['warnings']:
-                        warnings_text += f"🔴 {warning}\n\n"
+                        st.write(f"🔴 {warning}")
                 else:
-                    warnings_text = "✅ No warnings"
-                st.markdown(warnings_text)
-                
+                    st.write("✅ No warnings")
                 st.markdown("---")
+            
+            # Full-width Status Ribbon under video and posture box
+            with ribbon_placeholder.container():
+                st.markdown("### 📊 Live Performance Ribbon")
+                ribbon_col1, ribbon_col2, ribbon_col3 = st.columns(3)
                 
-                # Fixed bad moves section - always present
-                st.markdown("#### ❌ Bad Moves:")
-                st.markdown(f"**{status['bad_moves']}**")
+                with ribbon_col1:
+                    st.markdown("#### ❌ Bad Moves")
+                    st.markdown(f"## {status['bad_moves']}")
                 
-                st.markdown("---")
-                
-                # Fixed danger section - always present
-                st.markdown("#### 🚨 Danger Status:")
-                if status['danger_detected']:
-                    st.error("**DANGER DETECTED!**")
-                    if status['warnings']:
-                        msg = f"Postural warning: {', '.join(status['warnings'])}"
-                        trigger_voice_alert(msg)
+                with ribbon_col2:
+                    st.markdown("#### 🚨 Danger")
+                    if status['danger_detected']:
+                        st.error("DANGER!")
+                        if status['warnings']:
+                            msg = f"Postural warning: {', '.join(status['warnings'])}"
+                            trigger_voice_alert(msg)
+                        else:
+                            trigger_voice_alert("Danger detected. Check your posture.")
                     else:
-                        trigger_voice_alert("Danger detected. Check your posture.")
-                else:
-                    st.success("**No Danger**")
+                        st.success("Safe")
                 
-                st.markdown("---")
-                
-                # Fixed jump statistics - always present
-                st.markdown("#### 📊 Jump Stats:")
-                stats_col1, stats_col2 = st.columns(2)
-                with stats_col1:
-                    st.metric("Total Jumps", status['jump_count'])
-                with stats_col2:
-                    points = status.get('points', 0)
-                    st.metric("Points", points)
+                with ribbon_col3:
+                    st.markdown("#### 🥇 Stats")
+                    stat_col1, stat_col2 = st.columns(2)
+                    with stat_col1:
+                        st.metric("Count", status['jump_count'])
+                    with stat_col2:
+                        st.metric("Points", status.get('points', 0))
                 
                 st.markdown("---")
             
@@ -1526,6 +1527,7 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
         progress_bar = st.progress(0)
         stop_button_placeholder = st.empty()
         posture_placeholder = posture_col.empty()
+        ribbon_placeholder_squat_video = st.empty()
         
         frame_count = 0
         should_stop = False
@@ -1614,54 +1616,42 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
                 with info_col2:
                     st.markdown(f"**Status:** {status['status_text']}")
                 
-                st.markdown("---")
-                
-                st.markdown("#### ⚠️ Current Warnings:")
-                warnings_text = ""
+                st.markdown("#### ⚠️ Warnings")
                 if status['warnings']:
                     for warning in status['warnings']:
-                        warnings_text += f"🔴 {warning}\n\n"
+                        st.write(f"🔴 {warning}")
                 else:
-                    warnings_text = "✅ No warnings"
-                st.markdown(warnings_text)
-                
+                    st.write("✅ No warnings")
                 st.markdown("---")
+            
+            # Full-width Status Ribbon under video and posture box
+            with ribbon_placeholder_squat_video.container():
+                st.markdown("### 📊 Live Performance Ribbon")
+                ribbon_col1, ribbon_col2, ribbon_col3 = st.columns(3)
                 
-                st.markdown("#### ❌ Bad Moves:")
-                st.markdown(f"**{status['bad_moves']}**")
+                with ribbon_col1:
+                    st.markdown("#### ❌ Bad Moves")
+                    st.markdown(f"## {status['bad_moves']}")
                 
-                st.markdown("---")
-                
-                st.markdown("#### 🚨 Danger Status:")
-                if status['danger_detected']:
-                    st.error("**DANGER DETECTED!**")
-                    if status['warnings']:
-                        msg = f"Postural warning: {', '.join(status['warnings'])}"
-                        trigger_voice_alert(msg)
+                with ribbon_col2:
+                    st.markdown("#### 🚨 Danger")
+                    if status['danger_detected']:
+                        st.error("DANGER!")
+                        if status['warnings']:
+                            msg = f"Postural warning: {', '.join(status['warnings'])}"
+                            trigger_voice_alert(msg)
+                        else:
+                            trigger_voice_alert("Danger detected. Check your posture.")
                     else:
-                        trigger_voice_alert("Danger detected. Check your posture.")
-                else:
-                    st.success("**No Danger**")
+                        st.success("Safe")
                 
-                st.markdown("---")
-                
-                # Database Update Status
-                if f'last_db_update_squat' in st.session_state:
-                    update_msg = st.session_state[f'last_db_update_squat']
-                    update_time = st.session_state.get(f'last_db_update_time_squat', '')
-                    st.markdown(f"#### 💾 Database Status:")
-                    if '✅' in update_msg:
-                        st.success(f"{update_msg} ({update_time})")
-                    else:
-                        st.error(f"{update_msg} ({update_time})")
-                    st.markdown("---")
-                
-                st.markdown("#### 📊 Squat Stats:")
-                stats_col1, stats_col2 = st.columns(2)
-                with stats_col1:
-                    st.metric("Total Squats", st.session_state.session_stats['total_squats'])
-                with stats_col2:
-                    st.metric("Points", st.session_state.session_stats['total_points'])
+                with ribbon_col3:
+                    st.markdown("#### 🥇 Stats")
+                    stat_col1, stat_col2 = st.columns(2)
+                    with stat_col1:
+                        st.metric("Count", st.session_state.session_stats['total_squats'])
+                    with stat_col2:
+                        st.metric("Points", st.session_state.session_stats['total_points'])
                 
                 st.markdown("---")
             
@@ -1745,6 +1735,7 @@ def process_squat_live_camera(db, calibration_frames=100):
     frame_placeholder = video_col.empty()
     stop_button_placeholder = st.empty()
     posture_placeholder = posture_col.empty()
+    ribbon_placeholder_squat_camera = st.empty()
     
     st.info("📹 Live camera processing started! Position yourself and start squatting.")
     
@@ -1835,55 +1826,42 @@ def process_squat_live_camera(db, calibration_frames=100):
                 with info_col2:
                     st.markdown(f"**Status:** {status['status_text']}")
                 
-                st.markdown("---")
-                
-                st.markdown("#### ⚠️ Current Warnings:")
-                warnings_text = ""
+                st.markdown("#### ⚠️ Warnings")
                 if status['warnings']:
                     for warning in status['warnings']:
-                        warnings_text += f"🔴 {warning}\n\n"
+                        st.write(f"🔴 {warning}")
                 else:
-                    warnings_text = "✅ No warnings"
-                st.markdown(warnings_text)
-                
+                    st.write("✅ No warnings")
                 st.markdown("---")
+            
+            # Full-width Status Ribbon under video and posture box
+            with ribbon_placeholder_squat_camera.container():
+                st.markdown("### 📊 Live Performance Ribbon")
+                ribbon_col1, ribbon_col2, ribbon_col3 = st.columns(3)
                 
-                st.markdown("#### ❌ Bad Moves:")
-                st.markdown(f"**{status['bad_moves']}**")
+                with ribbon_col1:
+                    st.markdown("#### ❌ Bad Moves")
+                    st.markdown(f"## {status['bad_moves']}")
                 
-                st.markdown("---")
-                
-                st.markdown("#### 🚨 Danger Status:")
-                if status['danger_detected']:
-                    st.error("**DANGER DETECTED!**")
-                    if status['warnings']:
-                        msg = f"Postural warning: {', '.join(status['warnings'])}"
-                        trigger_voice_alert(msg)
+                with ribbon_col2:
+                    st.markdown("#### 🚨 Danger")
+                    if status['danger_detected']:
+                        st.error("DANGER!")
+                        if status['warnings']:
+                            msg = f"Postural warning: {', '.join(status['warnings'])}"
+                            trigger_voice_alert(msg)
+                        else:
+                            trigger_voice_alert("Danger detected. Check your posture.")
                     else:
-                        trigger_voice_alert("Danger detected. Check your posture.")
-                else:
-                    st.success("**No Danger**")
+                        st.success("Safe")
                 
-                st.markdown("---")
-                
-                # Database Update Status
-                if f'last_db_update_squat' in st.session_state:
-                    update_msg = st.session_state[f'last_db_update_squat']
-                    update_time = st.session_state.get(f'last_db_update_time_squat', '')
-                    st.markdown(f"#### 💾 Database Status:")
-                    if '✅' in update_msg:
-                        st.success(f"{update_msg} ({update_time})")
-                    else:
-                        st.error(f"{update_msg} ({update_time})")
-                    st.markdown("---")
-                
-                st.markdown("#### 📊 Squat Stats:")
-                stats_col1, stats_col2 = st.columns(2)
-                with stats_col1:
-                    st.metric("Total Squats", status['squat_count'])
-                with stats_col2:
-                    points = status.get('points', 0)
-                    st.metric("Points", points)
+                with ribbon_col3:
+                    st.markdown("#### 🥇 Stats")
+                    stat_col1, stat_col2 = st.columns(2)
+                    with stat_col1:
+                        st.metric("Count", status['squat_count'])
+                    with stat_col2:
+                        st.metric("Points", status.get('points', 0))
                 
                 st.markdown("---")
             
@@ -2052,6 +2030,7 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
         progress_bar = st.progress(0)
         stop_button_placeholder = st.empty()
         posture_placeholder = posture_col.empty()
+        ribbon_placeholder = st.empty()
         
         frame_count = 0
         should_stop = False
@@ -2146,55 +2125,42 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
                 with info_col2:
                     st.markdown(f"**Status:** {status['status_text']}")
                 
-                st.markdown("---")
-                
-                st.markdown("#### ⚠️ Current Warnings:")
-                warnings_text = ""
+                st.markdown("#### ⚠️ Warnings")
                 if status['warnings']:
                     for warning in status['warnings']:
-                        warnings_text += f"🔴 {warning}\n\n"
+                        st.write(f"🔴 {warning}")
                 else:
-                    warnings_text = "✅ No warnings"
-                st.markdown(warnings_text)
-                
+                    st.write("✅ No warnings")
                 st.markdown("---")
+            
+            # Full-width Status Ribbon under video and posture box
+            with ribbon_placeholder.container():
+                st.markdown("### 📊 Live Performance Ribbon")
+                ribbon_col1, ribbon_col2, ribbon_col3 = st.columns(3)
                 
-                st.markdown("#### ❌ Bad Moves:")
-                st.markdown(f"**{status['bad_moves']}**")
+                with ribbon_col1:
+                    st.markdown("#### ❌ Bad Moves")
+                    st.markdown(f"## {status['bad_moves']}")
                 
-                st.markdown("---")
-                
-                st.markdown("#### 🚨 Danger Status:")
-                if status['danger_detected']:
-                    st.error("**DANGER DETECTED!**")
-                    if status['warnings']:
-                        msg = f"Postural warning: {', '.join(status['warnings'])}"
-                        trigger_voice_alert(msg)
+                with ribbon_col2:
+                    st.markdown("#### 🚨 Danger")
+                    if status['danger_detected']:
+                        st.error("DANGER!")
+                        if status['warnings']:
+                            msg = f"Postural warning: {', '.join(status['warnings'])}"
+                            trigger_voice_alert(msg)
+                        else:
+                            trigger_voice_alert("Danger detected. Check your posture.")
                     else:
-                        trigger_voice_alert("Danger detected. Check your posture.")
-                else:
-                    st.success("**No Danger**")
+                        st.success("Safe")
                 
-                st.markdown("---")
-                
-                # Database Update Status
-                if f'last_db_update_pushup' in st.session_state:
-                    update_msg = st.session_state[f'last_db_update_pushup']
-                    update_time = st.session_state.get(f'last_db_update_time_pushup', '')
-                    st.markdown(f"#### 💾 Database Status:")
-                    if '✅' in update_msg:
-                        st.success(f"{update_msg} ({update_time})")
-                    else:
-                        st.error(f"{update_msg} ({update_time})")
-                    st.markdown("---")
-                
-                # Fixed push-up stats - always present
-                st.markdown("#### 📊 Push-up Stats:")
-                stats_col1, stats_col2 = st.columns(2)
-                with stats_col1:
-                    st.metric("Total Push-ups", st.session_state.session_stats['total_pushups'])
-                with stats_col2:
-                    st.metric("Points", st.session_state.session_stats['total_points'])
+                with ribbon_col3:
+                    st.markdown("#### 🥇 Stats")
+                    stat_col1, stat_col2 = st.columns(2)
+                    with stat_col1:
+                        st.metric("Count", st.session_state.session_stats['total_pushups'])
+                    with stat_col2:
+                        st.metric("Points", st.session_state.session_stats['total_points'])
                 
                 st.markdown("---")
             
@@ -2278,6 +2244,7 @@ def process_pushup_live_camera(db, calibration_frames=100):
     frame_placeholder = video_col.empty()
     stop_button_placeholder = st.empty()
     posture_placeholder = posture_col.empty()
+    ribbon_placeholder = st.empty()
     
     st.info("📹 Live camera processing started! Position yourself in push-up position and start doing push-ups.")
     
@@ -2374,55 +2341,42 @@ def process_pushup_live_camera(db, calibration_frames=100):
                 with info_col2:
                     st.markdown(f"**Status:** {status['status_text']}")
                 
-                st.markdown("---")
-                
-                st.markdown("#### ⚠️ Current Warnings:")
-                warnings_text = ""
+                st.markdown("#### ⚠️ Warnings")
                 if status['warnings']:
                     for warning in status['warnings']:
-                        warnings_text += f"🔴 {warning}\n\n"
+                        st.write(f"🔴 {warning}")
                 else:
-                    warnings_text = "✅ No warnings"
-                st.markdown(warnings_text)
-                
+                    st.write("✅ No warnings")
                 st.markdown("---")
+            
+            # Full-width Status Ribbon under video and posture box
+            with ribbon_placeholder.container():
+                st.markdown("### 📊 Live Performance Ribbon")
+                ribbon_col1, ribbon_col2, ribbon_col3 = st.columns(3)
                 
-                st.markdown("#### ❌ Bad Moves:")
-                st.markdown(f"**{status['bad_moves']}**")
+                with ribbon_col1:
+                    st.markdown("#### ❌ Bad Moves")
+                    st.markdown(f"## {status['bad_moves']}")
                 
-                st.markdown("---")
-                
-                st.markdown("#### 🚨 Danger Status:")
-                if status['danger_detected']:
-                    st.error("**DANGER DETECTED!**")
-                    if status['warnings']:
-                        msg = f"Postural warning: {', '.join(status['warnings'])}"
-                        trigger_voice_alert(msg)
+                with ribbon_col2:
+                    st.markdown("#### 🚨 Danger")
+                    if status['danger_detected']:
+                        st.error("DANGER!")
+                        if status['warnings']:
+                            msg = f"Postural warning: {', '.join(status['warnings'])}"
+                            trigger_voice_alert(msg)
+                        else:
+                            trigger_voice_alert("Danger detected. Check your posture.")
                     else:
-                        trigger_voice_alert("Danger detected. Check your posture.")
-                else:
-                    st.success("**No Danger**")
+                        st.success("Safe")
                 
-                st.markdown("---")
-                
-                # Database Update Status
-                if f'last_db_update_pushup' in st.session_state:
-                    update_msg = st.session_state[f'last_db_update_pushup']
-                    update_time = st.session_state.get(f'last_db_update_time_pushup', '')
-                    st.markdown(f"#### 💾 Database Status:")
-                    if '✅' in update_msg:
-                        st.success(f"{update_msg} ({update_time})")
-                    else:
-                        st.error(f"{update_msg} ({update_time})")
-                    st.markdown("---")
-                
-                st.markdown("#### 📊 Push-up Stats:")
-                stats_col1, stats_col2 = st.columns(2)
-                with stats_col1:
-                    st.metric("Total Push-ups", status['pushup_count'])
-                with stats_col2:
-                    points = status.get('points', 0)
-                    st.metric("Points", points)
+                with ribbon_col3:
+                    st.markdown("#### 🥇 Stats")
+                    stat_col1, stat_col2 = st.columns(2)
+                    with stat_col1:
+                        st.metric("Count", status['pushup_count'])
+                    with stat_col2:
+                        st.metric("Points", status.get('points', 0))
                 
                 st.markdown("---")
             
