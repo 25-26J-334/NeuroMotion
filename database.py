@@ -3,6 +3,7 @@ Database connection and operations for AI Athlete Trainer
 SQLite version
 """
 import sqlite3
+import bcrypt
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict
 import streamlit as st
@@ -13,7 +14,8 @@ class Database:
         """Initialize database connection using SQLite"""
         self.connection = None
         self.db_path = db_path or self._get_db_path()
-        self.connect()
+        if self.connect():
+            self._migrate_users_table()
     
     def _get_db_path(self) -> str:
         """Get database path from secrets or use default"""
@@ -71,6 +73,87 @@ class Database:
         finally:
             if cursor:
                 cursor.close()
+    
+    def _migrate_users_table(self):
+        """Add username, email, and password_hash columns if they don't exist"""
+        if not self.is_connected():
+            return
+            
+        # Check current columns
+        cursor = self.connection.cursor()
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [row[1] for row in cursor.fetchall()]
+        
+        # Add missing columns
+        changes_made = False
+        if 'username' not in columns:
+            self.execute_query("ALTER TABLE users ADD COLUMN username TEXT", fetch=False)
+            self.execute_query("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users(username)", fetch=False)
+            changes_made = True
+        if 'email' not in columns:
+            self.execute_query("ALTER TABLE users ADD COLUMN email TEXT", fetch=False)
+            self.execute_query("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)", fetch=False)
+            changes_made = True
+        if 'password_hash' not in columns:
+            self.execute_query("ALTER TABLE users ADD COLUMN password_hash TEXT", fetch=False)
+            changes_made = True
+        
+        if changes_made and self.connection:
+            self.connection.commit()
+    
+    def register_user(self, username: str, email: str, password: str, name: str, age: int) -> Optional[int]:
+        """Register a new user with hashed password"""
+        if not self.is_connected():
+            return None
+            
+        # Check if username or email exists
+        check_query = "SELECT user_id FROM users WHERE username = ? OR email = ?"
+        existing = self.execute_query(check_query, (username, email))
+        if existing:
+            return None
+            
+        # Hash password
+        salt = bcrypt.gensalt()
+        password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
+        
+        query = """
+        INSERT INTO users (username, email, password_hash, name, age, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?)
+        """
+        cursor = None
+        try:
+            cursor = self.connection.cursor()
+            cursor.execute(query, (username, email, password_hash, name, age, datetime.now()))
+            self.connection.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            st.error(f"Error registering user: {e}")
+            return None
+        finally:
+            if cursor:
+                cursor.close()
+
+    def authenticate_user(self, username_or_email: str, password: str) -> Optional[Dict]:
+        """Authenticate user and return user data if successful"""
+        if not self.is_connected():
+            return None
+            
+        query = "SELECT * FROM users WHERE username = ? OR email = ?"
+        result = self.execute_query(query, (username_or_email, username_or_email))
+        
+        if not result:
+            return None
+            
+        user = result[0]
+        if not user.get('password_hash'):
+            # Legacy user without password
+            return None
+            
+        # Verify password
+        stored_hash = user['password_hash'].encode('utf-8')
+        if bcrypt.checkpw(password.encode('utf-8'), stored_hash):
+            return user
+        return None
     
     def create_user(self, name: str, age: int) -> Optional[int]:
         """Create a new user and return user_id"""

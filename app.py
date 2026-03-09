@@ -142,7 +142,7 @@ if 'processing' not in st.session_state:
 if 'exercise_type' not in st.session_state:
     st.session_state.exercise_type = 'jump'  # 'jump' or 'squat'
 if 'page' not in st.session_state:
-    st.session_state.page = 'main'
+    st.session_state.page = 'login' # Start with login page
 if 'session_stats' not in st.session_state:
     st.session_state.session_stats = {
         'total_jumps': 0,
@@ -523,23 +523,52 @@ def initialize_database():
         return None
     return st.session_state.db
 
-def user_registration():
-    """User registration form"""
+def login_page(db):
+    """User login page"""
     load_css()
-    # Read and encode the image as base64
+    apply_premium_styling()
+    
+    st.title("🏃 AI Athlete Trainer")
+    st.markdown("### Welcome Back! Please login to continue")
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    with st.form("user_login"):
+        username_or_email = st.text_input("Username or Email", placeholder="Enter your username or email")
+        password = st.text_input("Password", type="password", placeholder="Enter your password")
+        submit = st.form_submit_button("Login", use_container_width=True)
+        
+        if submit:
+            if username_or_email and password:
+                user = db.authenticate_user(username_or_email, password)
+                if user:
+                    st.session_state.user_id = user['user_id']
+                    st.session_state.user_name = user['name']
+                    st.session_state.user_age = user['age']
+                    st.session_state.page = 'main'
+                    st.success(f"Welcome back, {user['name']}!")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Invalid username/email or password.")
+            else:
+                st.warning("Please enter both username/email and password.")
+    
+    if st.button("New user? Create an account", use_container_width=True):
+        st.session_state.page = 'register'
+        st.rerun()
+
+def apply_premium_styling():
+    """Apply premium background styling with base64 encoded image if available"""
     import base64
     from pathlib import Path
     
-    # Get the current directory and construct the path to the image
     current_dir = Path(__file__).parent
     image_path = current_dir / "static" / "css" / "athlete.png"
     
-    # Read and encode the image
     try:
         with open(image_path, "rb") as image_file:
             encoded_image = base64.b64encode(image_file.read()).decode()
         
-        # Add CSS for background image using base64
         st.markdown(f"""
         <style>
         .stApp {{
@@ -554,45 +583,59 @@ def user_registration():
             background-attachment: fixed;
             min-height: 100vh;
         }}
-        /* Target main content area */
         .main .block-container {{
-            max-width: 100px !important;
-            padding: 15px !important;
+            max-width: 600px !important;
+            padding: 40px !important;
             background-color: rgba(0, 18, 41, 0.6) !important;
             backdrop-filter: blur(20px) !important;
             -webkit-backdrop-filter: blur(20px) !important;
             border: 1px solid rgba(0, 168, 232, 0.1) !important;
             border-radius: 15px !important;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
-            position: absolute !important;
-            left: 20px !important;
-            top: 20px !important;
+            margin: auto !important;
+            margin-top: 50px !important;
         }}
-        /* Target form specifically */
         div[data-testid="stForm"] {{
-            max-width: 700px !important;
             background-color: transparent !important;
+            border: none !important;
+            padding: 0 !important;
         }}
         .stTextInput > label, .stNumberInput > label {{
             color: #00A8E8 !important;
             font-weight: 500 !important;
         }}
-        /* Custom button styling */
-        .stButton > button {{
-            background: linear-gradient(90deg, #001229 0%, #002b4d 100%);
-            border: 1px solid rgba(0, 168, 232, 0.3);
-            color: #00A8E8;
-            transition: all 0.3s ease;
+        /* Make input fields narrower and left-aligned */
+        div[data-testid="stForm"] .stTextInput, 
+        div[data-testid="stForm"] .stNumberInput,
+        div[data-testid="stForm"] .stDateInput {{
+            max-width: 400px !important;
+            margin-left: 0 !important;
+            margin-right: auto !important;
         }}
-        .stButton > button:hover {{
-            border-color: #00A8E8;
-            box-shadow: 0 0 10px rgba(0, 168, 232, 0.2);
-            color: white;
+        /* Target BOTH regular buttons and form submit buttons */
+        div[data-testid="stButton"] button,
+        div[data-testid="stFormSubmitButton"] button {{
+            background: linear-gradient(90deg, #001229 0%, #002b4d 100%) !important;
+            border: 1px solid rgba(0, 168, 232, 0.3) !important;
+            color: #00A8E8 !important;
+            transition: all 0.3s ease !important;
+            max-width: 400px !important;
+            display: block !important;
+            margin-left: 0 !important;
+            margin-right: auto !important;
+            margin-top: 20px !important;
+            margin-bottom: 20px !important;
+            width: 100% !important;
+        }}
+        div[data-testid="stButton"] button:hover,
+        div[data-testid="stFormSubmitButton"] button:hover {{
+            border-color: #00A8E8 !important;
+            box-shadow: 0 0 10px rgba(0, 168, 232, 0.2) !important;
+            color: white !important;
         }}
         </style>
         """, unsafe_allow_html=True)
-    except Exception as e:
-        # Fallback if image loading fails
+    except Exception:
         st.markdown("""
         <style>
         .stApp {
@@ -608,17 +651,62 @@ def user_registration():
             border-radius: 15px;
             padding: 30px;
             max-width: 600px;
+            margin: auto;
+            margin-top: 50px;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
         </style>
         """, unsafe_allow_html=True)
+
+def registration_page(db):
+    """User registration page"""
+    load_css()
+    apply_premium_styling()
     
     st.title("🏃 AI Athlete Trainer")
-    st.markdown("### Welcome! Please enter your details to start training")
-    st.markdown("<br>", unsafe_allow_html=True)
+    st.markdown("### Create your account to start training")
     st.markdown("<br>", unsafe_allow_html=True)
     
-    # Check database connection first
+    with st.form("user_registration_form"):
+        col1, col2 = st.columns(2)
+        with col1:
+            username = st.text_input("Username*", placeholder="Choose a username")
+            email = st.text_input("Email*", placeholder="Enter your email")
+        with col2:
+            password = st.text_input("Password*", type="password", placeholder="Choose a password")
+            confirm_password = st.text_input("Confirm Password*", type="password", placeholder="Confirm your password")
+            
+        name = st.text_input("Full Name", placeholder="Enter your full name")
+        age = st.number_input("Age", min_value=10, max_value=120, value=20)
+        
+        submit = st.form_submit_button("Register & Start Training", use_container_width=True)
+        
+        if submit:
+            if not (username and email and password):
+                st.warning("Please fill in all required fields (*)")
+            elif password != confirm_password:
+                st.error("Passwords do not match.")
+            elif len(password) < 6:
+                st.error("Password must be at least 6 characters long.")
+            else:
+                user_id = db.register_user(username, email, password, name or username, age)
+                if user_id:
+                    st.session_state.user_id = user_id
+                    st.session_state.user_name = name or username
+                    st.session_state.user_age = age
+                    st.session_state.page = 'main'
+                    st.success(f"Welcome, {name or username}! Your account has been created.")
+                    time.sleep(1)
+                    st.rerun()
+                else:
+                    st.error("Registration failed. Username or email might already be taken.")
+    
+    if st.button("Already have an account? Login", use_container_width=True):
+        st.session_state.page = 'login'
+        st.rerun()
+
+def user_registration():
+    """Route between login and registration"""
     db = initialize_database()
     if db is None:
         st.error("⚠️ Database Connection Failed")
@@ -628,41 +716,17 @@ def user_registration():
         **Quick Setup:**
         - Run: `python setup_database.py` from the source directory
         - This will create the SQLite database file automatically
-        
-        **Optional: Custom Database Path**
-        - Create `.streamlit/secrets.toml` file if you want a custom location:
-          ```toml
-          [sqlite]
-          database_path = "path/to/your/athlete_trainer.db"
-          ```
-        - If not specified, the database will be created in the source directory as `athlete_trainer.db`
         """)
-        
         if st.button("🔄 Retry Connection"):
             if 'db' in st.session_state:
                 del st.session_state.db
             st.rerun()
         return
-    
-    with st.form("user_registration"):
-        name = st.text_input("Name", placeholder="Enter your name")
-        age = st.number_input("Age", min_value=10, max_value=120, value=20)
-        submit = st.form_submit_button("Start Training", use_container_width=True)
-        
-        if submit:
-            if name:
-                user_id = db.create_user(name, age)
-                if user_id:
-                    st.session_state.user_id = user_id
-                    st.session_state.user_name = name
-                    st.session_state.user_age = age
-                    st.success(f"Welcome, {name}! Let's start training.")
-                    time.sleep(1)
-                    st.rerun()
-                else:
-                    st.error("Registration failed. Please try again.")
-            else:
-                st.warning("Please enter your name.")
+
+    if st.session_state.get('page') == 'register':
+        registration_page(db)
+    else:
+        login_page(db)
 
 def render_sidebar(db):
     """Render a persistent sidebar available across all pages"""
