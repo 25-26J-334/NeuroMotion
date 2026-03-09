@@ -766,6 +766,11 @@ def render_sidebar(db):
                 st.session_state.session_id = None
                 st.session_state.detector = None
                 st.rerun()
+
+            st.markdown("---")
+            if st.button("🦴 3D Muscle Map", use_container_width=True, type="primary" if st.session_state.page == 'muscle_map' else "secondary"):
+                st.session_state.page = 'muscle_map'
+                st.rerun()
         
         if st.button("📊 Dashboard", use_container_width=True, type="primary" if st.session_state.page == 'dashboard' else "secondary"):
             st.session_state.page = 'dashboard'
@@ -779,14 +784,7 @@ def render_sidebar(db):
             st.session_state.page = 'trainbot'
             st.rerun()
             
-        if st.button("🦾 3D Muscle Map", use_container_width=True, type="primary" if st.session_state.page == 'muscle_map' else "secondary"):
-            st.session_state.page = 'muscle_map'
-            st.rerun()
 
-        if st.button("📅 Activity Calendar", use_container_width=True, type="primary" if st.session_state.page == 'heatmap' else "secondary"):
-            st.session_state.page = 'heatmap'
-            st.rerun()
-        
         if st.button("🏆 Leaderboard", use_container_width=True, type="primary" if st.session_state.page == 'leaderboard' else "secondary"):
             st.session_state.page = 'leaderboard'
             st.rerun()
@@ -3159,6 +3157,70 @@ def dashboard_page():
             """, unsafe_allow_html=True)
         else:
             st.info("Complete a training session to see your statistics!")
+    
+    # ── Activity Calendar (inline) ─────────────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 📅 Activity Calendar")
+    st.caption("Your training consistency over the last 365 days (GitHub-style)")
+
+    try:
+        from datetime import timedelta as _td
+        import plotly.graph_objects as _go
+        _daily = db.get_daily_exercise_stats(days=365)
+
+        if not _daily:
+            st.info("No training data yet. Complete a session to start filling this calendar!")
+        else:
+            _end   = datetime.now().date()
+            _start = _end - _td(days=364)
+            _dates = pd.date_range(start=_start, end=_end)
+
+            _df = pd.DataFrame(_daily)
+            _df['date'] = pd.to_datetime(_df['date']).dt.date
+            _dict = {}
+            for _, r in _df.iterrows():
+                _dict[r['date']] = int((r.get('jumps') or 0) +
+                                       (r.get('squats') or 0) +
+                                       (r.get('pushups') or 0))
+
+            _z    = [[0]*53 for _ in range(7)]
+            _htxt = [['']*53 for _ in range(7)]
+            for d in _dates:
+                _d = d.date()
+                _wi = (_d - _start).days // 7
+                _di = _d.weekday()
+                if _wi < 53:
+                    _v = _dict.get(_d, 0)
+                    _z[_di][_wi] = _v
+                    _htxt[_di][_wi] = f"{_d.strftime('%b %d, %Y')}<br>Exercises: {_v}"
+
+            _fig = _go.Figure(_go.Heatmap(
+                z=_z,
+                x=[f"W{i}" for i in range(53)],
+                y=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'],
+                text=_htxt, hoverinfo='text',
+                colorscale='Greens', showscale=False,
+                xgap=2, ygap=2
+            ))
+            _fig.update_layout(
+                height=200, margin=dict(l=40, r=20, t=10, b=10),
+                paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0)',
+                font=dict(color='white'),
+                xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                yaxis=dict(showgrid=False, zeroline=False, autorange='reversed')
+            )
+            st.plotly_chart(_fig, use_container_width=True,
+                            config={'displayModeBar': False},
+                            key="dashboard_activity_calendar")
+
+            _total  = sum(sum(r) for r in _z)
+            _active = sum(1 for r in _z for v in r if v > 0)
+            c1, c2 = st.columns(2)
+            c1.metric("Total Exercises (Year)", _total)
+            c2.metric("Active Days", _active)
+    except Exception as _e:
+        st.warning(f"Could not load Activity Calendar: {_e}")
+
 
 def get_trainbot_response(user_message):
     """Generate TrainBot response based on LLM or fallback rule-based system"""
