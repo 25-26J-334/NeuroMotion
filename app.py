@@ -759,6 +759,13 @@ def render_sidebar(db):
                 st.session_state.session_id = None
                 st.session_state.detector = None
                 st.rerun()
+
+            if st.button("⚔️ 1v1 Multiplayer", use_container_width=True, type="primary" if st.session_state.exercise_type == 'multiplayer' and st.session_state.page == 'main' else "secondary"):
+                st.session_state.page = 'main'
+                st.session_state.exercise_type = 'multiplayer'
+                st.session_state.session_id = None
+                st.session_state.detector = None
+                st.rerun()
         
         if st.button("📊 Dashboard", use_container_width=True, type="primary" if st.session_state.page == 'dashboard' else "secondary"):
             st.session_state.page = 'dashboard'
@@ -805,12 +812,252 @@ def main_app():
         return
     
     # Main content area - route based on exercise type
-    if st.session_state.exercise_type == 'squat':
+    if st.session_state.exercise_type == 'multiplayer':
+        main_app_multiplayer(db)
+    elif st.session_state.exercise_type == 'squat':
         main_app_squat(db)
     elif st.session_state.exercise_type == 'pushup':
         main_app_pushup(db)
     else:
         main_app_jump(db)
+
+def process_multiplayer_camera(db, exercise_type='jump', duration_seconds=60, p1_name="Player 1", p2_name="Player 2"):
+    """Split-screen 1v1 multiplayer mode. Left half = P1, Right half = P2."""
+    # Initialize two independent detectors
+    if exercise_type == 'jump':
+        det_p1 = JumpDetector(calibration_frames=50, jump_height="medium")
+        det_p2 = JumpDetector(calibration_frames=50, jump_height="medium")
+    elif exercise_type == 'squat':
+        det_p1 = SquatDetector(calibration_frames=50)
+        det_p2 = SquatDetector(calibration_frames=50)
+    else:  # pushup
+        det_p1 = PushupDetector(calibration_frames=50)
+        det_p2 = PushupDetector(calibration_frames=50)
+
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        st.error("❌ Could not open camera. Check it's not in use.")
+        return
+
+    st.info(
+        f"📹 **Split-Screen 1v1 Battle!** "
+        f"**{p1_name}** stand on the **LEFT** half, **{p2_name}** stand on the **RIGHT** half. "
+        f"Stand still for calibration, then compete!"
+    )
+
+    frame_placeholder = st.empty()
+    stop_col, timer_col = st.columns([1, 3])
+    stop_placeholder = stop_col.empty()
+    timer_placeholder = timer_col.empty()
+    score_placeholder = st.empty()
+
+    score_p1 = 0
+    score_p2 = 0
+    frame_count = 0
+    start_time = None      # Only starts after calibration
+    calibrated = False
+    game_over = False
+
+    try:
+        while True:
+            # ---------- stop button ----------
+            if stop_placeholder.button("⏹️ Stop", key=f"mp_stop_{frame_count}"):
+                game_over = True
+                break
+
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            frame = cv2.flip(frame, 1)
+            frame_count += 1
+            h, w = frame.shape[:2]
+            mid = w // 2
+
+            # Split frame
+            left_frame  = frame[:, :mid].copy()
+            right_frame = frame[:, mid:].copy()
+
+            # Process each half
+            left_annotated,  status_p1 = det_p1.process_frame(left_frame,  frame_index=frame_count)
+            right_annotated, status_p2 = det_p2.process_frame(right_frame, frame_index=frame_count)
+
+            # Determine if both sides calibrated
+            p1_calib = status_p1.get('calibrating', False)
+            p2_calib = status_p2.get('calibrating', False)
+
+            if not calibrated and not p1_calib and not p2_calib:
+                calibrated = True
+                start_time = time.time()
+
+            # Start timer after calibration
+            elapsed = 0
+            remaining = duration_seconds
+            if calibrated and start_time is not None:
+                elapsed = time.time() - start_time
+                remaining = max(0, duration_seconds - elapsed)
+                if remaining <= 0 and not game_over:
+                    game_over = True
+
+            # Update scores using the right key per exercise
+            if exercise_type == 'jump':
+                score_p1 = status_p1.get('jump_count', score_p1)
+                score_p2 = status_p2.get('jump_count', score_p2)
+            elif exercise_type == 'squat':
+                score_p1 = status_p1.get('squat_count', score_p1)
+                score_p2 = status_p2.get('squat_count', score_p2)
+            else:
+                score_p1 = status_p1.get('pushup_count', score_p1)
+                score_p2 = status_p2.get('pushup_count', score_p2)
+
+            # ---- Draw divider line on each half ----
+            # Left side label
+            label_bg_color = (0, 80, 160)
+            cv2.rectangle(left_annotated,  (0, 0), (mid, 50), label_bg_color, -1)
+            cv2.putText(left_annotated, f"{p1_name}: {score_p1}", (10, 36),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 220, 50), 2)
+
+            cv2.rectangle(right_annotated, (0, 0), (mid, 50), label_bg_color, -1)
+            cv2.putText(right_annotated, f"{p2_name}: {score_p2}", (10, 36),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (100, 255, 100), 2)
+
+            # Stitch halves back
+            combined = np.hstack((left_annotated, right_annotated))
+
+            # Draw center divider
+            cv2.line(combined, (mid, 0), (mid, h), (255, 255, 255), 3)
+
+            # Draw timer
+            if not calibrated:
+                timer_text = "⏳ Calibrating..."
+                cv2.putText(combined, timer_text, (mid - 130, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 255), 2)
+            else:
+                timer_text = f"⏱ {int(remaining)}s"
+                color = (0, 255, 0) if remaining > 10 else (0, 0, 255)
+                cv2.putText(combined, timer_text, (mid - 60, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, color, 3)
+
+            if game_over:
+                # Overlay winner banner
+                if score_p1 > score_p2:
+                    winner_text = f"🏆 {p1_name} WINS!"
+                    banner_color = (0, 80, 160)
+                elif score_p2 > score_p1:
+                    winner_text = f"🏆 {p2_name} WINS!"
+                    banner_color = (0, 120, 0)
+                else:
+                    winner_text = "🤝 IT'S A TIE!"
+                    banner_color = (80, 0, 120)
+
+                overlay = combined.copy()
+                cv2.rectangle(overlay, (w//2 - 240, h//2 - 60), (w//2 + 240, h//2 + 60), banner_color, -1)
+                cv2.addWeighted(overlay, 0.85, combined, 0.15, 0, combined)
+                cv2.putText(combined, winner_text, (w//2 - 220, h//2 + 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3)
+
+            # Display combined frame
+            combined_rgb = cv2.cvtColor(combined, cv2.COLOR_BGR2RGB)
+            frame_placeholder.image(combined_rgb, channels="RGB", use_container_width=True)
+
+            # Score ribbon below
+            with score_placeholder.container():
+                s1, s2 = st.columns(2)
+                with s1:
+                    st.markdown(
+                        f"<div style='text-align:center; background:rgba(0,80,160,0.25); border-radius:8px; padding:10px;'>"
+                        f"<h2 style='margin:0; color:#FFDC32;'>👤 {p1_name}</h2>"
+                        f"<h1 style='margin:0; color:white;'>{score_p1}</h1>"
+                        f"<span style='color:#a0aec0;'>reps</span></div>",
+                        unsafe_allow_html=True
+                    )
+                with s2:
+                    st.markdown(
+                        f"<div style='text-align:center; background:rgba(0,120,0,0.25); border-radius:8px; padding:10px;'>"
+                        f"<h2 style='margin:0; color:#64FF64;'>👤 {p2_name}</h2>"
+                        f"<h1 style='margin:0; color:white;'>{score_p2}</h1>"
+                        f"<span style='color:#a0aec0;'>reps</span></div>",
+                        unsafe_allow_html=True
+                    )
+
+            # Timer
+            if calibrated:
+                timer_placeholder.progress(
+                    max(0.0, remaining / duration_seconds),
+                    text=f"⏱ {int(remaining)}s remaining"
+                )
+            else:
+                timer_placeholder.info("Stand still — calibrating both players...")
+
+            if game_over:
+                time.sleep(4)
+                break
+
+            time.sleep(0.01)
+
+    except Exception as e:
+        st.error(f"Error in multiplayer mode: {e}")
+    finally:
+        cap.release()
+
+        # Show final result
+        if score_p1 > score_p2:
+            st.success(f"🏆 **{p1_name} WINS** with {score_p1} reps vs {score_p2} reps!")
+        elif score_p2 > score_p1:
+            st.success(f"🏆 **{p2_name} WINS** with {score_p2} reps vs {score_p1} reps!")
+        else:
+            st.info(f"🤝 **IT'S A TIE!** Both players scored {score_p1} reps!")
+
+def main_app_multiplayer(db):
+    """1v1 Multiplayer launcher page"""
+    st.title("⚔️ 1v1 Multiplayer Battle")
+    st.markdown(
+        "Challenge a friend! **Stand on opposite sides** of the camera and compete "
+        "to see who can do the most perfect reps in the time limit. 🥊"
+    )
+
+    st.markdown("---")
+    st.markdown("#### ⚙️ Battle Settings")
+
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        p1_name = st.text_input("Player 1 Name", value="Player 1", key="mp_p1_name")
+    with col2:
+        p2_name = st.text_input("Player 2 Name", value="Player 2", key="mp_p2_name")
+    with col3:
+        exercise_choice = st.selectbox(
+            "Exercise",
+            options=["🏃 Jump", "🦵 Squat", "💪 Push-up"],
+            key="mp_exercise"
+        )
+    with col4:
+        duration = st.selectbox(
+            "Duration",
+            options=["30 seconds", "60 seconds", "90 seconds"],
+            index=1,
+            key="mp_duration"
+        )
+
+    exercise_type_map = {"🏃 Jump": "jump", "🦵 Squat": "squat", "💪 Push-up": "pushup"}
+    duration_map = {"30 seconds": 30, "60 seconds": 60, "90 seconds": 90}
+
+    ex_type = exercise_type_map[exercise_choice]
+    dur_sec = duration_map[duration]
+
+    st.markdown("---")
+    st.markdown(
+        f"""
+        **Instructions:**
+        1. Both players should stand **facing the camera**.
+        2. **{p1_name}** → stand on the **LEFT** side of the camera view.
+        3. **{p2_name}** → stand on the **RIGHT** side of the camera view.
+        4. Stand still and wait for **Calibration** to complete.
+        5. Start performing **{exercise_choice}** reps. The player with the most reps in **{duration}** wins!
+        """
+    )
+
+    if st.button("🚀 Start Battle!", use_container_width=True, type="primary"):
+        process_multiplayer_camera(db, ex_type, dur_sec, p1_name, p2_name)
 
 def show_db_update_notification(exercise_type, count, success=True):
     """Show database update notification"""
