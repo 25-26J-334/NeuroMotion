@@ -1619,7 +1619,7 @@ def main_app_jump(db):
                 guide_col1, guide_col2 = st.columns(2)
                 with guide_col1:
                     st.markdown("#### ✅ Correct Form")
-                    st.video("https://www.youtube.com/watch?v=7Pxr4xOrhNk")
+                    st.video("https://youtu.be/j260zYfRz8Q")
                     st.markdown("- Land softly on balls of feet\n- Keep chest up\n- Core engaged")
                 with guide_col2:
                     st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
