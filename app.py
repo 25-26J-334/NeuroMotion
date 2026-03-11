@@ -1615,16 +1615,16 @@ def main_app_jump(db):
             render_highlights_panel('jump')
             
             # Form Guide Expander
-            with st.expander("📖 Form Guide: Correct vs Incorrect Jump"):
+            with st.expander("📖 Form Guide: Correct Form"):
                 guide_col1, guide_col2 = st.columns(2)
                 with guide_col1:
                     st.markdown("#### ✅ Correct Form")
                     st.video("https://youtu.be/j260zYfRz8Q")
                     st.markdown("- Land softly on balls of feet\n- Keep chest up\n- Core engaged")
-                with guide_col2:
-                    st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
-                    st.video("https://www.youtube.com/watch?v=s_KXOy7yZP0")
-                    st.markdown("- Landing heavy on heels\n- Knees caving in\n- Poor posture")
+                # with guide_col2:
+                #     st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
+                #     st.video("https://youtube.com/shorts/FJDZrSZQLiY?si=KjidK9GEGZWdX5FI")
+                #     st.markdown("- Landing heavy on heels\n- Knees caving in\n- Poor posture")
             
             st.markdown("---")
             render_performance_prediction_panel('jump')
@@ -1715,16 +1715,16 @@ def main_app_squat(db):
             render_highlights_panel('squat')
             
             # Form Guide Expander
-            with st.expander("📖 Form Guide: Correct vs Incorrect Squat"):
+            with st.expander("📖 Form Guide: Correct Form"):
                 guide_col1, guide_col2 = st.columns(2)
                 with guide_col1:
                     st.markdown("#### ✅ Correct Form")
-                    st.video("https://www.youtube.com/watch?v=dW3zj79xfrc")
+                    st.video("https://www.youtube.com/watch?v=xqvCmoLULNY")
                     st.markdown("- Feet shoulder-width apart\n- Chest up, back straight\n- Knees track over toes")
-                with guide_col2:
-                    st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
-                    st.video("https://www.youtube.com/watch?v=T6id8FuUcao")
-                    st.markdown("- Knees caving in (Valgus)\n- Heels lifting off the ground\n- Rounding the lower back (Butt Wink)")
+                # with guide_col2:
+                #     st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
+                #     st.video("https://www.youtube.com/watch?v=T6id8FuUcao")
+                #     st.markdown("- Knees caving in (Valgus)\n- Heels lifting off the ground\n- Rounding the lower back (Butt Wink)")
             
             st.markdown("---")
             render_performance_prediction_panel('squat')
@@ -2232,16 +2232,16 @@ def main_app_pushup(db):
             render_highlights_panel('pushup')
             
             # Form Guide Expander
-            with st.expander("📖 Form Guide: Correct vs Incorrect Push-up"):
+            with st.expander("📖 Form Guide: Correct Form"):
                 guide_col1, guide_col2 = st.columns(2)
                 with guide_col1:
                     st.markdown("#### ✅ Correct Form")
                     st.video("https://www.youtube.com/watch?v=pKZ-lkKKMws")
                     st.markdown("- Body in a straight line\n- Hands slightly wider than shoulders\n- Elbows tucked 45 degrees")
-                with guide_col2:
-                    st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
-                    st.video("https://www.youtube.com/watch?v=4Bc1tPaYkOo")
-                    st.markdown("- Flared elbows (T-shape)\n- Sagging hips/arched back\n- Partial range of motion")
+                # with guide_col2:
+                #     st.markdown("#### ❌ Incorrect Form (Common Mistakes)")
+                #     st.video("https://www.youtube.com/watch?v=4Bc1tPaYkOo")
+                #     st.markdown("- Flared elbows (T-shape)\n- Sagging hips/arched back\n- Partial range of motion")
             
             st.markdown("---")
             render_performance_prediction_panel('pushup')
