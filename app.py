@@ -1729,25 +1729,25 @@ def main_app_squat(db):
             st.markdown("---")
             render_performance_prediction_panel('squat')
     
-    else:  # Camera
-        st.info("💡 Position yourself in front of the camera. Click 'Start Processing' to begin live squat detection!")
-        
-        col1, col2 = st.columns([2, 1])
-        with col1:
-            start_button = st.button("▶️ Start Processing", use_container_width=True, type="primary")
-        with col2:
-            calibration_frames = st.number_input(
-                "Calibration Frames",
-                min_value=10,
-                max_value=300,
-                value=100,
-                step=10,
-                help="Number of frames to use for calibration (default: 100)",
-                key="squat_camera_calibration_frames"
-            )
-        
-        if start_button:
-            process_squat_live_camera(db, calibration_frames)
+   else:  # Camera
+    st.info("💡 Position yourself in front of the camera. Click 'Start Processing' to begin live squat detection!")
+    
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        start_button = st.button("▶️ Start Processing", use_container_width=True, type="primary")
+    with col2:
+        calibration_frames = st.number_input(
+            "Calibration Frames",
+            min_value=10,
+            max_value=300,
+            value=100,
+            step=10,
+            help="Number of frames to use for calibration (default: 100)",
+            key="squat_camera_calibration_frames"
+        )
+    
+    if start_button:
+        process_squat_live_camera(db, calibration_frames)
 
 def process_squat_video_file(uploaded_file, db, calibration_frames=100):
     """Process uploaded video file for squats"""
