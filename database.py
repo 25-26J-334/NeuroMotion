@@ -75,16 +75,25 @@ class Database:
                 cursor.close()
     
     def _migrate_users_table(self):
-        """Add username, email, and password_hash columns if they don't exist"""
+        """Create tables if they don't exist, then add username, email, and password_hash columns"""
         if not self.is_connected():
             return
-            
-        # Check current columns
+
         cursor = self.connection.cursor()
+
+        # Check if users table exists
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='users'")
+        table_exists = cursor.fetchone()
+
+        if not table_exists:
+            # Create base tables from schema
+            self._create_base_tables()
+
+        # Check current columns for migration
         cursor.execute("PRAGMA table_info(users)")
         columns = [row[1] for row in cursor.fetchall()]
-        
-        # Add missing columns
+
+        # Add auth-related columns if missing
         changes_made = False
         if 'username' not in columns:
             self.execute_query("ALTER TABLE users ADD COLUMN username TEXT", fetch=False)
@@ -97,9 +106,145 @@ class Database:
         if 'password_hash' not in columns:
             self.execute_query("ALTER TABLE users ADD COLUMN password_hash TEXT", fetch=False)
             changes_made = True
-        
+
         if changes_made and self.connection:
             self.connection.commit()
+
+    def _create_base_tables(self):
+        """Create all base tables if they don't exist"""
+        if not self.is_connected():
+            return
+
+        schema_sql = """
+        -- Users table
+        CREATE TABLE IF NOT EXISTS users (
+            user_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            age INTEGER NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_name ON users(name);
+
+        -- Training sessions table
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            start_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            end_time TIMESTAMP NULL,
+            total_jumps INTEGER DEFAULT 0,
+            total_squats INTEGER DEFAULT 0,
+            total_pushups INTEGER DEFAULT 0,
+            total_points INTEGER DEFAULT 0,
+            total_bad_moves INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_user_id ON sessions(user_id);
+        CREATE INDEX IF NOT EXISTS idx_start_time ON sessions(start_time);
+        CREATE INDEX IF NOT EXISTS idx_sessions_user_time ON sessions(user_id, start_time);
+
+        -- Individual jumps table
+        CREATE TABLE IF NOT EXISTS jumps (
+            jump_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            jump_number INTEGER NOT NULL,
+            points INTEGER DEFAULT 0,
+            bad_moves INTEGER DEFAULT 0,
+            warnings TEXT,
+            has_danger INTEGER DEFAULT 0,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_session_id ON jumps(session_id);
+        CREATE INDEX IF NOT EXISTS idx_timestamp ON jumps(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_jumps_session ON jumps(session_id, jump_number);
+
+        -- Squats table
+        CREATE TABLE IF NOT EXISTS squats (
+            squat_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            squat_number INTEGER NOT NULL,
+            points INTEGER DEFAULT 0,
+            bad_moves INTEGER DEFAULT 0,
+            warnings TEXT,
+            has_danger INTEGER DEFAULT 0,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_squats_session_id ON squats(session_id);
+        CREATE INDEX IF NOT EXISTS idx_squats_timestamp ON squats(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_squats_session ON squats(session_id, squat_number);
+
+        -- Pushups table
+        CREATE TABLE IF NOT EXISTS pushups (
+            pushup_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            pushup_number INTEGER NOT NULL,
+            points INTEGER DEFAULT 0,
+            bad_moves INTEGER DEFAULT 0,
+            warnings TEXT,
+            has_danger INTEGER DEFAULT 0,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pushups_session_id ON pushups(session_id);
+        CREATE INDEX IF NOT EXISTS idx_pushups_timestamp ON pushups(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_pushups_session ON pushups(session_id, pushup_number);
+
+        -- Training recommendations table
+        CREATE TABLE IF NOT EXISTS training_recommendations (
+            recommendation_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            session_id INTEGER,
+            recommendation_type TEXT NOT NULL,
+            priority TEXT NOT NULL,
+            title TEXT NOT NULL,
+            description TEXT NOT NULL,
+            exercise_focus TEXT,
+            specific_issue TEXT,
+            recommendation_text TEXT NOT NULL,
+            difficulty_level TEXT,
+            estimated_time_minutes INTEGER,
+            is_completed INTEGER DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            completed_at TIMESTAMP NULL,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE SET NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_recommendations_user ON training_recommendations(user_id);
+        CREATE INDEX IF NOT EXISTS idx_recommendations_type ON training_recommendations(recommendation_type);
+        CREATE INDEX IF NOT EXISTS idx_recommendations_priority ON training_recommendations(priority);
+
+        -- User performance analytics table
+        CREATE TABLE IF NOT EXISTS user_performance_analytics (
+            analytics_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            analysis_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            exercise_type TEXT NOT NULL,
+            total_reps INTEGER DEFAULT 0,
+            avg_points_per_rep REAL DEFAULT 0,
+            total_bad_moves INTEGER DEFAULT 0,
+            bad_move_rate REAL DEFAULT 0,
+            most_common_issue TEXT,
+            improvement_trend TEXT,
+            performance_score REAL DEFAULT 0,
+            recommendations_generated INTEGER DEFAULT 0,
+            FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_analytics_user_date ON user_performance_analytics(user_id, analysis_date);
+        """
+
+        try:
+            self.connection.executescript(schema_sql)
+            self.connection.commit()
+        except Exception as e:
+            print(f"Error creating base tables: {e}")
     
     def register_user(self, username: str, email: str, password: str, name: str, age: int) -> Optional[int]:
         """Register a new user with hashed password"""

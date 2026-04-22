@@ -3227,38 +3227,38 @@ def get_trainbot_response(user_message):
     # Check for Groq API Key in multiple locations
     api_key = None
     found_in_section = "Not found"
-    
-    # Direct check first
-    api_key = st.secrets.get('GROQ_API_KEY')
-    if api_key:
-        found_in_section = "Direct"
-    else:
-        # Check in groq section
-        try:
+
+    try:
+        # Direct check first
+        api_key = st.secrets.get('GROQ_API_KEY')
+        if api_key:
+            found_in_section = "Direct"
+        else:
+            # Check in groq section
             if 'groq' in st.secrets:
                 api_key = st.secrets.groq.get('api_key')
                 if api_key:
                     found_in_section = "Groq section"
-        except:
-            pass
-        
-        # Fallback: check every section
-        if not api_key:
-            for section in st.secrets:
-                try:
-                    section_data = st.secrets[section]
-                    if hasattr(section_data, 'get'):
-                        api_key = section_data.get('GROQ_API_KEY')
-                        if api_key:
-                            found_in_section = f"Section '{section}'"
-                            break
-                        # Also check for 'api_key' in case it's named differently
-                        api_key = section_data.get('api_key')
-                        if api_key:
-                            found_in_section = f"Section '{section}' (api_key)"
-                            break
-                except:
-                    continue
+
+            # Fallback: check every section
+            if not api_key:
+                for section in st.secrets:
+                    try:
+                        section_data = st.secrets[section]
+                        if hasattr(section_data, 'get'):
+                            api_key = section_data.get('GROQ_API_KEY')
+                            if api_key:
+                                found_in_section = f"Section '{section}'"
+                                break
+                            # Also check for 'api_key' in case it's named differently
+                            api_key = section_data.get('api_key')
+                            if api_key:
+                                found_in_section = f"Section '{section}' (api_key)"
+                                break
+                    except:
+                        continue
+    except:
+        pass
     
     groq_client = None
     if api_key:
@@ -3671,37 +3671,37 @@ def trainbot_page():
     # Check for Groq API Key using the same improved logic
     api_key_detected = None
     found_in_section = "Not found"
-    
-    # Direct check first
-    api_key_detected = st.secrets.get('GROQ_API_KEY')
-    if api_key_detected:
-        found_in_section = "Direct"
-    else:
-        # Check in groq section
-        try:
+
+    try:
+        # Direct check first
+        api_key_detected = st.secrets.get('GROQ_API_KEY')
+        if api_key_detected:
+            found_in_section = "Direct"
+        else:
+            # Check in groq section
             if 'groq' in st.secrets:
                 api_key_detected = st.secrets.groq.get('api_key')
                 if api_key_detected:
                     found_in_section = "Groq section"
-        except:
-            pass
-        
-        # Fallback: check every section
-        if not api_key_detected:
-            for section in st.secrets:
-                try:
-                    section_data = st.secrets[section]
-                    if hasattr(section_data, 'get'):
-                        api_key_detected = section_data.get('GROQ_API_KEY')
-                        if api_key_detected:
-                            found_in_section = f"Section '{section}'"
-                            break
-                        api_key_detected = section_data.get('api_key')
+
+            # Fallback: check every section
+            if not api_key_detected:
+                for section in st.secrets:
+                    try:
+                        section_data = st.secrets[section]
+                        if hasattr(section_data, 'get'):
+                            api_key_detected = section_data.get('GROQ_API_KEY')
+                            if api_key_detected:
+                                found_in_section = f"Section '{section}'"
+                                break
+                            api_key_detected = section_data.get('api_key')
                         if api_key_detected:
                             found_in_section = f"Section '{section}' (api_key)"
                             break
-                except:
-                    continue
+                    except:
+                        continue
+    except:
+        pass
 
     # Initialize chat history with welcome message
     if len(st.session_state.chat_history) == 0:
