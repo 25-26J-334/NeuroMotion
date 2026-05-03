@@ -15,7 +15,7 @@ class ExerciseValidator:
         
         Args:
             video_path (str): Path to the temporary video file
-            expected_exercise (str): One of 'jump', 'squat', 'pushup'
+            expected_exercise (str): One of 'jump', 'squat', 'pushup', 'burpee'
             
         Returns:
             bool: True if the video matches the expected exercise, False otherwise
@@ -88,13 +88,19 @@ class ExerciseValidator:
         detected_exercise = "unknown"
         
         # Heuristic classification
-        if is_horizontal_frames / valid_frames > 0.3:
+        is_horizontal = is_horizontal_frames / valid_frames > 0.1
+        ankle_movement = max_ankle_y - min_ankle_y
+        is_jumping = ankle_movement > 0.1
+        is_squatting = max_knee_bend > 40
+        
+        if is_horizontal and is_jumping:
+            detected_exercise = "burpee"
+        elif is_horizontal_frames / valid_frames > 0.3:
             detected_exercise = "pushup"
         else:
-            ankle_movement = max_ankle_y - min_ankle_y
-            if ankle_movement > 0.1:  # Significant vertical movement
+            if is_jumping:  # Significant vertical movement
                 detected_exercise = "jump"
-            elif max_knee_bend > 40:  # Deep knee bend without vertical jump
+            elif is_squatting:  # Deep knee bend without vertical jump
                 detected_exercise = "squat"
             else:
                 # Default to jump if standing but no deep bend detected, 
@@ -105,7 +111,7 @@ class ExerciseValidator:
             return True, "Validation passed"
         else:
             # Provide user-friendly exercise names
-            names = {'jump': 'Jump', 'squat': 'Squat', 'pushup': 'Push-up'}
+            names = {'jump': 'Jump', 'squat': 'Squat', 'pushup': 'Push-up', 'burpee': 'Burpee'}
             det_name = names.get(detected_exercise, detected_exercise)
             exp_name = names.get(expected_exercise, expected_exercise)
             return False, f"Expected a {exp_name} video, but detected {det_name} movements."

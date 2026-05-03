@@ -16,6 +16,7 @@ from database import Database
 from jump_detector import JumpDetector
 from squat_detector import SquatDetector
 from pushup_detector import PushupDetector
+from burpee_detector import BurpeeDetector
 from recommendation_engine import RecommendationEngine
 from recommendations_ui import recommendations_page, add_recommendations_to_sidebar
 from heatmap_ui import heatmap_page
@@ -150,16 +151,20 @@ if 'session_stats' not in st.session_state:
         'total_jumps': 0,
         'total_squats': 0,
         'total_pushups': 0,
+        'total_burpees': 0,
         'total_points': 0,
         'total_bad_moves': 0,
         'jumps_data': [],
         'squats_data': [],
-        'pushups_data': []
+        'pushups_data': [],
+        'burpees_data': []
     }
 if 'squat_detector' not in st.session_state:
     st.session_state.squat_detector = None
 if 'pushup_detector' not in st.session_state:
     st.session_state.pushup_detector = None
+if 'burpee_detector' not in st.session_state:
+    st.session_state.burpee_detector = None
 if 'voice_alerts_enabled' not in st.session_state:
     st.session_state.voice_alerts_enabled = False
 if 'last_voice_alert_time' not in st.session_state:
@@ -172,7 +177,7 @@ if 'performance_prediction' not in st.session_state:
     st.session_state.performance_prediction = None
 if 'performance_prediction_exercise' not in st.session_state:
     st.session_state.performance_prediction_exercise = None
-for ex in ['jump', 'squat', 'pushup']:
+for ex in ['jump', 'squat', 'pushup', 'burpee']:
     if f'{ex}_best_rep_gif' not in st.session_state:
         st.session_state[f'{ex}_best_rep_gif'] = None
     if f'{ex}_worst_rep_gif' not in st.session_state:
@@ -761,6 +766,13 @@ def render_sidebar(db):
                 st.session_state.detector = None
                 st.rerun()
 
+            if st.button("🔥 Burpee Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'burpee' and st.session_state.page == 'main' else "secondary"):
+                st.session_state.page = 'main'
+                st.session_state.exercise_type = 'burpee'
+                st.session_state.session_id = None
+                st.session_state.detector = None
+                st.rerun()
+
             if st.button("⚔️ 1v1 Multiplayer", use_container_width=True, type="primary" if st.session_state.exercise_type == 'multiplayer' and st.session_state.page == 'main' else "secondary"):
                 st.session_state.page = 'main'
                 st.session_state.exercise_type = 'multiplayer'
@@ -794,7 +806,8 @@ def render_sidebar(db):
             if st.session_state.session_id:
                 db.end_session(st.session_state.session_id, st.session_state.session_stats['total_jumps'], 
                              st.session_state.session_stats['total_points'], st.session_state.session_stats['total_bad_moves'],
-                             st.session_state.session_stats.get('total_squats', 0), st.session_state.session_stats.get('total_pushups', 0))
+                             st.session_state.session_stats.get('total_squats', 0), st.session_state.session_stats.get('total_pushups', 0),
+                             st.session_state.session_stats.get('total_burpees', 0))
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
@@ -817,6 +830,8 @@ def main_app():
         main_app_squat(db)
     elif st.session_state.exercise_type == 'pushup':
         main_app_pushup(db)
+    elif st.session_state.exercise_type == 'burpee':
+        main_app_burpee(db)
     else:
         main_app_jump(db)
 
@@ -2730,6 +2745,309 @@ def process_pushup_live_camera(db, calibration_frames=100):
         
         st.rerun()
 
+
+def main_app_burpee(db):
+    """Main burpee training interface"""
+    st.title("🔥 Burpee Training Session")
+    
+    # Voice Alerts Toggle
+    st.session_state.voice_alerts_enabled = st.toggle("🎙️ Enable Voice Alerts", value=st.session_state.voice_alerts_enabled, key="voice_toggle_burpee")
+    
+    # Session stats display
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Burpees", st.session_state.session_stats['total_burpees'])
+    with col2:
+        st.metric("Total Points", st.session_state.session_stats['total_points'])
+    with col3:
+        st.metric("Bad Moves", st.session_state.session_stats['total_bad_moves'])
+    with col4:
+        avg_points = (st.session_state.session_stats['total_points'] / 
+                     max(st.session_state.session_stats['total_burpees'], 1))
+        st.metric("Avg Points/Burpee", f"{avg_points:.1f}")
+
+
+    # Video input selection
+    input_method = st.radio(
+        "Select Input Method:",
+        ["📹 Upload Video", "📷 Use Camera"],
+        horizontal=True
+    )
+    
+    if input_method == "📹 Upload Video":
+        uploaded_file = st.file_uploader(
+            "Upload a video file",
+            type=['mp4', 'avi', 'mov', 'mkv'],
+            help="Upload a video file to analyze burpees"
+        )
+        
+        if uploaded_file is not None:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                start_button = st.button("▶️ Start Processing", use_container_width=True)
+            with col2:
+                calibration_frames = st.number_input(
+                    "Calibration Frames",
+                    min_value=10,
+                    max_value=300,
+                    value=50,
+                    step=10,
+                    help="Number of frames to use for calibration (default: 50)"
+                )
+            
+            if start_button:
+                process_burpee_video_file(uploaded_file, db, calibration_frames)
+        
+        if st.session_state.session_stats['total_burpees'] > 0:
+            render_highlights_panel('burpee')
+            st.markdown("---")
+            render_performance_prediction_panel('burpee')
+    
+    else:  # Camera
+        st.info("💡 Position yourself in front of the camera standing up. Click 'Start Processing' to begin live burpee detection!")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            start_button = st.button("▶️ Start Processing", use_container_width=True, type="primary")
+        with col2:
+            calibration_frames = st.number_input(
+                "Calibration Frames",
+                min_value=10,
+                max_value=300,
+                value=50,
+                step=10,
+                help="Number of frames to use for calibration (default: 50)",
+                key="burpee_camera_calibration_frames"
+            )
+        
+        if start_button:
+            process_burpee_live_camera(db, calibration_frames)
+
+def process_burpee_video_file(uploaded_file, db, calibration_frames=50):
+    """Process an uploaded video file for burpees"""
+    if 'burpee_detector' not in st.session_state or st.session_state.burpee_detector is None:
+        st.session_state.burpee_detector = BurpeeDetector(calibration_frames=calibration_frames)
+    
+    st.session_state.processing = True
+    
+    if st.session_state.session_id is None:
+        if st.session_state.user_id:
+            st.session_state.session_id = db.create_session(st.session_state.user_id)
+        else:
+            st.error("Please login first to track your progress!")
+            return
+            
+    temp_file = "temp_burpee_video.mp4"
+    with open(temp_file, "wb") as f:
+        f.write(uploaded_file.read())
+        
+    validator = ExerciseValidator()
+    is_valid, validation_msg = validator.validate_video(temp_file, "burpee")
+    
+    if not is_valid:
+        st.error(f"❌ Video Validation Failed: {validation_msg}")
+        st.warning("Please upload a video showing burpees.")
+        import os
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+        return
+        
+    st.success("✅ Video validated successfully! Analyzing burpees...")
+    
+    cap = cv2.VideoCapture(temp_file)
+    if not cap.isOpened():
+        st.error("Could not open the video file.")
+        return
+        
+    # Create side-by-side layout: 60% video, 40% metrics/status
+    video_col, status_col = st.columns([0.6, 0.4])
+    
+    stframe = video_col.empty()
+    status_text = status_col.empty()
+    metrics_placeholder = status_col.empty()
+    warnings_placeholder = status_col.empty()
+    stop_button = st.button("⏹️ Stop Processing")
+    
+    frame_count = 0
+    start_time = time.time()
+    
+    while cap.isOpened() and not stop_button:
+        ret, frame = cap.read()
+        if not ret:
+            break
+            
+        frame_count += 1
+        
+        # Process frame
+        annotated_frame, status = st.session_state.burpee_detector.process_frame(frame, frame_index=frame_count)
+        
+        # Check for new burpee
+        current_count = status['burpee_count']
+        if current_count > st.session_state.session_stats['total_burpees']:
+            st.session_state.session_stats['total_burpees'] = current_count
+            st.session_state.session_stats['total_points'] += status['points']
+            st.session_state.session_stats['total_bad_moves'] += status['bad_moves']
+            
+            # Save rep data for highlights
+            rep_data = st.session_state.burpee_detector.rep_history[-1]
+            st.session_state.session_stats['burpees_data'].append(rep_data)
+            
+            # DB update
+            if st.session_state.session_id:
+                db.update_session_totals(
+                    st.session_state.session_id,
+                    st.session_state.session_stats['total_jumps'],
+                    st.session_state.session_stats['total_points'],
+                    st.session_state.session_stats['total_bad_moves'],
+                    st.session_state.session_stats['total_squats'],
+                    st.session_state.session_stats['total_pushups'],
+                    current_count
+                )
+                db.record_burpee(
+                    st.session_state.session_id,
+                    current_count,
+                    status['points'],
+                    status['bad_moves'],
+                    ",".join(status['warnings']),
+                    status['danger_detected']
+                )
+                show_db_update_notification('Burpee', current_count, success=True)
+                
+            # Update prediction
+            update_performance_prediction(db, 'burpee', current_count)
+
+        # UI updates
+        rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+        stframe.image(rgb_frame, channels="RGB")
+        
+        status_text.markdown(f"### Status: {status['status_text']}")
+        
+        with metrics_placeholder.container():
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Burpees", status['burpee_count'])
+            c2.metric("Latest Points", status['points'])
+            c3.metric("FPS", int(frame_count / (time.time() - start_time)))
+            
+        if status['danger_detected']:
+            warnings_placeholder.error("⚠️ DANGEROUS MOVEMENT DETECTED: " + ", ".join(status['warnings']))
+            if status['warnings']:
+                trigger_voice_alert(status['warnings'][0])
+        elif status['warnings']:
+            warnings_placeholder.warning("⚠️ Form Warnings: " + ", ".join(status['warnings']))
+        else:
+            warnings_placeholder.empty()
+
+    cap.release()
+    st.session_state.processing = False
+    
+    if st.session_state.session_stats['total_burpees'] > 0:
+        extract_highlights_gifs(temp_file, st.session_state.session_stats['burpees_data'], 'burpee')
+    
+    import os
+    if os.path.exists(temp_file):
+        os.remove(temp_file)
+        
+    st.success("Processing complete!")
+    time.sleep(2)
+    st.rerun()
+
+def process_burpee_live_camera(db, calibration_frames=50):
+    """Process live camera feed for burpees"""
+    if 'burpee_detector' not in st.session_state or st.session_state.burpee_detector is None:
+        st.session_state.burpee_detector = BurpeeDetector(calibration_frames=calibration_frames)
+    else:
+        st.session_state.burpee_detector.start_recalibration()
+        
+    st.session_state.processing = True
+    
+    if st.session_state.session_id is None:
+        if st.session_state.user_id:
+            st.session_state.session_id = db.create_session(st.session_state.user_id)
+        else:
+            st.warning("Running in Guest Mode - Progress won't be saved.")
+    
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        st.error("Could not open camera.")
+        return
+        
+    # Create side-by-side layout: 60% video, 40% metrics/status
+    video_col, status_col = st.columns([0.6, 0.4])
+    
+    stframe = video_col.empty()
+    status_text = status_col.empty()
+    metrics_placeholder = status_col.empty()
+    warnings_placeholder = status_col.empty()
+    stop_button = st.button("⏹️ Stop Camera")
+    
+    frame_count = 0
+    start_time = time.time()
+    
+    while cap.isOpened() and not stop_button:
+        ret, frame = cap.read()
+        if not ret:
+            st.error("Failed to read from camera.")
+            break
+            
+        frame = cv2.flip(frame, 1)
+        frame_count += 1
+        
+        annotated_frame, status = st.session_state.burpee_detector.process_frame(frame, frame_index=frame_count)
+        
+        current_count = status['burpee_count']
+        if current_count > st.session_state.session_stats['total_burpees']:
+            st.session_state.session_stats['total_burpees'] = current_count
+            st.session_state.session_stats['total_points'] += status['points']
+            st.session_state.session_stats['total_bad_moves'] += status['bad_moves']
+            
+            if st.session_state.session_id:
+                db.update_session_totals(
+                    st.session_state.session_id,
+                    st.session_state.session_stats['total_jumps'],
+                    st.session_state.session_stats['total_points'],
+                    st.session_state.session_stats['total_bad_moves'],
+                    st.session_state.session_stats['total_squats'],
+                    st.session_state.session_stats['total_pushups'],
+                    current_count
+                )
+                db.record_burpee(
+                    st.session_state.session_id,
+                    current_count,
+                    status['points'],
+                    status['bad_moves'],
+                    ",".join(status['warnings']),
+                    status['danger_detected']
+                )
+                show_db_update_notification('Burpee', current_count, success=True)
+                
+            update_performance_prediction(db, 'burpee', current_count)
+
+        rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+        stframe.image(rgb_frame, channels="RGB")
+        
+        status_text.markdown(f"### Status: {status['status_text']}")
+        
+        with metrics_placeholder.container():
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Burpees", status['burpee_count'])
+            c2.metric("Latest Points", status['points'])
+            c3.metric("FPS", int(frame_count / (time.time() - start_time)))
+            
+        if status['danger_detected']:
+            warnings_placeholder.error("⚠️ DANGEROUS MOVEMENT DETECTED: " + ", ".join(status['warnings']))
+            if status['warnings']:
+                trigger_voice_alert(status['warnings'][0])
+        elif status['warnings']:
+            warnings_placeholder.warning("⚠️ Form Warnings: " + ", ".join(status['warnings']))
+        else:
+            warnings_placeholder.empty()
+
+    cap.release()
+    st.session_state.processing = False
+    st.success("Session ended!")
+    time.sleep(1)
+    st.rerun()
+
 def leaderboard_page():
     """Display leaderboard with separate sections for each exercise"""
     st.title("🏆 Leaderboards")
@@ -2740,7 +3058,7 @@ def leaderboard_page():
         return
     
     # Create tabs for different leaderboards
-    tab1, tab2, tab3, tab4 = st.tabs(["🏃 Jumps", "🦵 Squats", "💪 Push-ups", "📊 Overall"])
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏃 Jumps", "🦵 Squats", "💪 Push-ups", "🔥 Burpees", "📊 Overall"])
     
     # Jump Leaderboard
     with tab1:
@@ -2841,8 +3159,41 @@ def leaderboard_page():
         else:
             st.info("No push-up data available yet. Start training to see rankings!")
     
-    # Overall Leaderboard
+    # Burpee Leaderboard
     with tab4:
+        st.subheader("🔥 Burpee Leaderboard")
+        leaderboard = db.get_leaderboard(limit=20, exercise_type='burpee')
+        
+        if leaderboard:
+            df = pd.DataFrame(leaderboard)
+            df['total_points'] = df['total_points'].fillna(0).astype(int)
+            df['total_count'] = df['total_count'].fillna(0).astype(int)
+            df['total_bad_moves'] = df['total_bad_moves'].fillna(0).astype(int)
+            df['Rank'] = range(1, len(df) + 1)
+            
+            df_display = df[['Rank', 'name', 'age', 'total_count', 'total_points', 
+                           'total_bad_moves', 'total_sessions', 'last_session']]
+            df_display.columns = ['Rank', 'Name', 'Age', 'Total Burpees', 'Total Points', 
+                                 'Bad Moves', 'Sessions', 'Last Session']
+            
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                fig = px.bar(df.head(10), x='name', y='total_points', 
+                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'},
+                            color_discrete_sequence=['#FF2E2E'])
+                st.plotly_chart(fig, use_container_width=True, key="burpee_leaderboard_points")
+            with col2:
+                fig = px.bar(df.head(10), x='name', y='total_count',
+                            title="Top 10 by Burpees", labels={'name': 'Name', 'total_count': 'Burpees'},
+                            color_discrete_sequence=['#FFD700'])
+                st.plotly_chart(fig, use_container_width=True, key="burpee_leaderboard_burpees")
+        else:
+            st.info("No burpee data available yet. Start training to see rankings!")
+    
+    # Overall Leaderboard
+    with tab5:
         st.subheader("📊 Overall Leaderboard")
         leaderboard = db.get_leaderboard(limit=20, exercise_type='all')
         
@@ -2956,7 +3307,7 @@ def dashboard_page():
     
     st.markdown(f"""
     <div class="dashboard-card">
-        <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
             <div class="metric-container">
                 <div class="metric-label">🏃 Total Jumps</div>
                 <div class="metric-value" style="color: #00A8E8;">{stats.get('total_jumps', 0)}</div>
@@ -2968,6 +3319,10 @@ def dashboard_page():
             <div class="metric-container">
                 <div class="metric-label">💪 Total Push-ups</div>
                 <div class="metric-value" style="color: #66FF00;">{stats.get('total_pushups', 0)}</div>
+            </div>
+            <div class="metric-container">
+                <div class="metric-label">🔥 Total Burpees</div>
+                <div class="metric-value" style="color: #FFD700;">{stats.get('total_burpees', 0)}</div>
             </div>
         </div>
     </div>
@@ -2983,10 +3338,10 @@ def dashboard_page():
     
     with col1:
         st.markdown("#### Exercise Distribution")
-        if exercise_dist['jumps'] + exercise_dist['squats'] + exercise_dist['pushups'] > 0:
+        if exercise_dist['jumps'] + exercise_dist['squats'] + exercise_dist['pushups'] + exercise_dist.get('burpees', 0) > 0:
             df_pie = pd.DataFrame({
-                'exercise': ['Jumps', 'Squats', 'Push-ups'],
-                'value': [exercise_dist['jumps'], exercise_dist['squats'], exercise_dist['pushups']]
+                'exercise': ['Jumps', 'Squats', 'Push-ups', 'Burpees'],
+                'value': [exercise_dist['jumps'], exercise_dist['squats'], exercise_dist['pushups'], exercise_dist.get('burpees', 0)]
             })
             fig_pie = px.pie(
                 df_pie,
@@ -2997,7 +3352,8 @@ def dashboard_page():
                 color_discrete_map={
                     'Jumps': '#00A8E8',
                     'Squats': '#F28500',
-                    'Push-ups': '#66FF00'
+                    'Push-ups': '#66FF00',
+                    'Burpees': '#FFD700'
                 }
             )
             st.plotly_chart(fig_pie, use_container_width=True, key="dashboard_pie_chart")
@@ -3040,6 +3396,16 @@ def dashboard_page():
                     marker_color='#66FF00'
                 ))
             
+            top_burpees = db.get_top_performers_by_exercise('burpee', 5)
+            if top_burpees:
+                df_burpees = pd.DataFrame(top_burpees)
+                fig_bar.add_trace(go.Bar(
+                    name='Burpees',
+                    x=df_burpees['name'],
+                    y=df_burpees['count'],
+                    marker_color='#FFD700'
+                ))
+            
             fig_bar.update_layout(
                 title="Top 5 Performers by Exercise Type",
                 xaxis_title="User",
@@ -3056,7 +3422,7 @@ def dashboard_page():
         df_time = pd.DataFrame(hourly_stats)
         df_time['hour'] = pd.to_datetime(df_time['hour'])
         df_time = df_time.sort_values('hour')
-        for _col in ['jumps', 'squats', 'pushups', 'points', 'participants', 'sessions']:
+        for _col in ['jumps', 'squats', 'pushups', 'burpees', 'points', 'participants', 'sessions']:
             if _col in df_time.columns:
                 df_time[_col] = pd.to_numeric(df_time[_col], errors='coerce').fillna(0)
         hour_end = pd.Timestamp.now().floor('H')
@@ -3069,7 +3435,7 @@ def dashboard_page():
             .rename_axis('hour')
             .reset_index()
         )
-        for _col in ['jumps', 'squats', 'pushups', 'points', 'participants', 'sessions']:
+        for _col in ['jumps', 'squats', 'pushups', 'burpees', 'points', 'participants', 'sessions']:
             if _col in df_time.columns:
                 df_time[_col] = df_time[_col].fillna(0)
         
@@ -3098,6 +3464,13 @@ def dashboard_page():
                 mode='lines+markers',
                 name='Push-ups',
                 line=dict(color='#66FF00', width=2)
+            ))
+            fig_line.add_trace(go.Scatter(
+                x=df_time['hour'],
+                y=df_time['burpees'],
+                mode='lines+markers',
+                name='Burpees',
+                line=dict(color='#FFD700', width=2)
             ))
             fig_line.update_layout(
                 title="Exercise Count Over Time (Hourly)",
@@ -3321,13 +3694,11 @@ def get_trainbot_response(user_message):
                         if all_users_stats:
                             total_users = len(all_users_stats)
                             total_sessions_db = sum(user.get('total_sessions', 0) for user in all_users_stats)
-                            total_points_db = sum(user.get('total_points', 0) for user in all_users_stats)
-                            total_jumps_db = sum(user.get('total_jumps', 0) for user in all_users_stats)
-                            total_squats_db = sum(user.get('total_squats', 0) for user in all_users_stats)
                             total_pushups_db = sum(user.get('total_pushups', 0) for user in all_users_stats)
+                            total_burpees_db = sum(user.get('total_burpees', 0) for user in all_users_stats)
                             
                             database_insights.append(f"DATABASE OVERVIEW: {total_users} total athletes, {total_sessions_db} total sessions, {total_points_db} total points scored")
-                            database_insights.append(f"EXERCISE TOTALS: {total_jumps_db} jumps, {total_squats_db} squats, {total_pushups_db} push-ups across all users")
+                            database_insights.append(f"EXERCISE TOTALS: {total_jumps_db} jumps, {total_squats_db} squats, {total_pushups_db} push-ups, {total_burpees_db} burpees across all users")
                             
                             if total_users > 0:
                                 avg_sessions_per_user = total_sessions_db / total_users
@@ -3339,8 +3710,9 @@ def get_trainbot_response(user_message):
                             jump_sessions_db = [s for s in all_sessions if s.get('exercise_type') == 'jump']
                             squat_sessions_db = [s for s in all_sessions if s.get('exercise_type') == 'squat'] 
                             pushup_sessions_db = [s for s in all_sessions if s.get('exercise_type') == 'pushup']
+                            burpee_sessions_db = [s for s in all_sessions if s.get('exercise_type') == 'burpee']
                             
-                            database_insights.append(f"EXERCISE POPULARITY: {len(jump_sessions_db)} jump sessions, {len(squat_sessions_db)} squat sessions, {len(pushup_sessions_db)} push-up sessions")
+                            database_insights.append(f"EXERCISE POPULARITY: {len(jump_sessions_db)} jump sessions, {len(squat_sessions_db)} squat sessions, {len(pushup_sessions_db)} push-up sessions, {len(burpee_sessions_db)} burpee sessions")
                             
                             # Find best performances in database
                             if all_sessions:
@@ -3354,6 +3726,10 @@ def get_trainbot_response(user_message):
                                     database_insights.append(f"BEST SQUAT: {best_squat_session.get('points')} points")
                                 if best_pushup_session and best_pushup_session.get('points'):
                                     database_insights.append(f"BEST PUSH-UP: {best_pushup_session.get('points')} points")
+                                
+                                best_burpee_session = max([s for s in burpee_sessions_db if s.get('points')], key=lambda x: x.get('points', 0))
+                                if best_burpee_session and best_burpee_session.get('points'):
+                                    database_insights.append(f"BEST BURPEE: {best_burpee_session.get('points')} points")
                         
                         if leaderboard_data:
                             # Leaderboard analysis
@@ -3382,7 +3758,7 @@ def get_trainbot_response(user_message):
                     
                     # === BASIC USER PROFILE ===
                     if stats:
-                        context_parts.append(f"USER PROFILE: {stats['total_sessions']} total sessions, {stats.get('total_jumps', 0)} jumps, {stats.get('total_squats', 0)} squats, {stats.get('total_pushups', 0)} push-ups, {stats['total_points']} total points, {stats.get('total_bad_moves', 0)} bad moves detected")
+                        context_parts.append(f"USER PROFILE: {stats['total_sessions']} total sessions, {stats.get('total_jumps', 0)} jumps, {stats.get('total_squats', 0)} squats, {stats.get('total_pushups', 0)} push-ups, {stats.get('total_burpees', 0)} burpees, {stats['total_points']} total points, {stats.get('total_bad_moves', 0)} bad moves detected")
                     
                     # Add database context first for broader perspective
                     if database_context:
@@ -3394,14 +3770,16 @@ def get_trainbot_response(user_message):
                         jump_sessions = [s for s in recent_sessions if s.get('exercise_type') == 'jump']
                         squat_sessions = [s for s in recent_sessions if s.get('exercise_type') == 'squat']
                         pushup_sessions = [s for s in recent_sessions if s.get('exercise_type') == 'pushup']
+                        burpee_sessions = [s for s in recent_sessions if s.get('exercise_type') == 'burpee']
                         
-                        context_parts.append(f"EXERCISE BREAKDOWN: {len(jump_sessions)} jump sessions, {len(squat_sessions)} squat sessions, {len(pushup_sessions)} push-up sessions")
+                        context_parts.append(f"EXERCISE BREAKDOWN: {len(jump_sessions)} jump sessions, {len(squat_sessions)} squat sessions, {len(pushup_sessions)} push-up sessions, {len(burpee_sessions)} burpee sessions")
                         
                         # Performance by exercise type
                         for ex_type, sessions, ex_name in [
                             (jump_sessions, 'jump'), 
                             (squat_sessions, 'squat'), 
-                            (pushup_sessions, 'pushup')
+                            (pushup_sessions, 'pushup'),
+                            (burpee_sessions, 'burpee')
                         ]:
                             if sessions:
                                 ex_points = [s.get('points', 0) for s in sessions]
@@ -3521,7 +3899,7 @@ def get_trainbot_response(user_message):
                     # === CURRENT SESSION STATUS ===
                     if st.session_state.get('session_stats'):
                         session_stats = st.session_state.session_stats
-                        context_parts.append(f"CURRENT SESSION: {session_stats.get('total_jumps', 0)} jumps, {session_stats.get('total_squats', 0)} squats, {session_stats.get('total_pushups', 0)} push-ups, {session_stats.get('total_points', 0)} points")
+                        context_parts.append(f"CURRENT SESSION: {session_stats.get('total_jumps', 0)} jumps, {session_stats.get('total_squats', 0)} squats, {session_stats.get('total_pushups', 0)} push-ups, {session_stats.get('total_burpees', 0)} burpees, {session_stats.get('total_points', 0)} points")
                     
                     # === SYSTEM-WIDE INSIGHTS ===
                     context_parts.append("SYSTEM SCOPE: Analyzing entire database, all user sessions, performance trends, leaderboard data, training plans, activity patterns, predictions, and real-time session data")
@@ -3534,7 +3912,7 @@ def get_trainbot_response(user_message):
                     try:
                         basic_stats = db.get_user_stats(st.session_state.user_id)
                         if basic_stats:
-                            comprehensive_context = f" BASIC USER DATA: {basic_stats['total_sessions']} sessions, {basic_stats.get('total_jumps', 0)} jumps, {basic_stats.get('total_squats', 0)} squats, {basic_stats.get('total_pushups', 0)} push-ups, {basic_stats['total_points']} total points. "
+                            comprehensive_context = f" BASIC USER DATA: {basic_stats['total_sessions']} sessions, {basic_stats.get('total_jumps', 0)} jumps, {basic_stats.get('total_squats', 0)} squats, {basic_stats.get('total_pushups', 0)} push-ups, {basic_stats.get('total_burpees', 0)} burpees, {basic_stats['total_points']} total points. "
                         else:
                             comprehensive_context = " Limited user data available. "
                     except:
@@ -3628,6 +4006,11 @@ def get_trainbot_response(user_message):
             return "Push-ups are great for upper body strength! 💪 Here's the proper form:\n\n✅ Keep your body in a straight line (plank position)\n✅ Lower your body until your chest nearly touches the floor\n✅ Push back up to starting position\n✅ Keep your core engaged\n✅ Breathe out as you push up, breathe in as you lower\n\nReady to improve your push-ups?"
         return "Push-ups strengthen your chest, arms, and core! Want tips on proper form?"
     
+    if 'burpee' in message_lower:
+        if any(word in message_lower for word in ['how', 'what', 'explain', 'tell']):
+            return "Burpees are the ultimate full-body exercise! 🔥 Here's the 4-step process:\n\n✅ **Squat**: Lower your hips with hands on floor\n✅ **Plank**: Kick feet back into a solid plank (don't sag your hips!)\n✅ **Up**: Jump feet forward back to squat position\n✅ **Jump**: Explode upward with hands in the air\n\nIt's intense but highly effective for both strength and cardio. Ready for a set?"
+        return "Burpees are amazing for full-body conditioning! Want to know the proper technique to avoid injury?"
+    
     # Training/motivation
     if any(word in message_lower for word in ['motivate', 'motivation', 'encourage', 'inspire']):
         return "You're doing amazing! 💪 Every workout counts, and consistency is key. Remember:\n\n🌟 Progress takes time - be patient with yourself\n🌟 Small improvements lead to big results\n🌟 You're stronger than you think!\n\nKeep going! What exercise would you like to focus on today?"
@@ -3641,7 +4024,7 @@ def get_trainbot_response(user_message):
     
     # Questions about the app
     if any(word in message_lower for word in ['app', 'application', 'system', 'platform']):
-        return "This is the AI Athlete Trainer app! 🏃 It uses computer vision (MediaPipe) to:\n\n📹 Track your exercises in real-time\n📊 Count your reps and analyze your form\n⚠️ Detect posture issues and bad moves\n🏆 Track your progress and compete on leaderboards\n\nHave you tried the jump, squat, or push-up sessions yet?"
+        return "This is the AI Athlete Trainer app! 🏃 It uses computer vision (MediaPipe) to:\n\n📹 Track your exercises in real-time\n📊 Count your reps and analyze your form\n⚠️ Detect posture issues and bad moves\n🏆 Track your progress and compete on leaderboards\n\nHave you tried the jump, squat, push-up, or burpee sessions yet?"
     
     # Default response
     default_responses = [
@@ -3885,6 +4268,7 @@ def trainbot_page():
                     jump_sessions = [s for s in all_sessions if s.get('exercise_type') == 'jump']
                     squat_sessions = [s for s in all_sessions if s.get('exercise_type') == 'squat']
                     pushup_sessions = [s for s in all_sessions if s.get('exercise_type') == 'pushup']
+                    burpee_sessions = [s for s in all_sessions if s.get('exercise_type') == 'burpee']
                     
                     # Calculate performance metrics
                     performance_grade = "Good"
@@ -3919,6 +4303,7 @@ def trainbot_page():
                     - Jump Sessions: {len(jump_sessions)} sessions
                     - Squat Sessions: {len(squat_sessions)} sessions  
                     - Push-up Sessions: {len(pushup_sessions)} sessions
+                    - Burpee Sessions: {len(burpee_sessions)} sessions
                     
                     RECENT PERFORMANCE (Last 5 Sessions):
                     {recent_sessions[:5] if recent_sessions else "No recent sessions"}

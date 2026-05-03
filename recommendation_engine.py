@@ -50,7 +50,8 @@ class RecommendationEngine:
             'analysis_date': datetime.now(),
             'jumps': self._analyze_exercise_performance(user_id, 'jumps', sessions),
             'squats': self._analyze_exercise_performance(user_id, 'squats', sessions),
-            'pushups': self._analyze_exercise_performance(user_id, 'pushups', sessions)
+            'pushups': self._analyze_exercise_performance(user_id, 'pushups', sessions),
+            'burpees': self._analyze_exercise_performance(user_id, 'burpees', sessions)
         }
         
         return performance
@@ -153,7 +154,7 @@ class RecommendationEngine:
         recommendations = []
         
         # Generate recommendations for each exercise type
-        for exercise_type in ['jumps', 'squats', 'pushups']:
+        for exercise_type in ['jumps', 'squats', 'pushups', 'burpees']:
             exercise_perf = performance[exercise_type]
             
             if exercise_perf['total_reps'] > 0:
@@ -236,8 +237,8 @@ class RecommendationEngine:
         recommendations = []
         
         # Calculate overall performance
-        total_score = sum(perf.get('performance_score', 0) for perf in performance.values() if isinstance(perf, dict))
-        avg_score = total_score / 3
+        perf_values = [perf.get('performance_score', 0) for perf in performance.values() if isinstance(perf, dict)]
+        avg_score = sum(perf_values) / len(perf_values) if perf_values else 0
         
         # Rest and recovery recommendation
         if avg_score < 50:
@@ -297,6 +298,8 @@ class RecommendationEngine:
             return f'{base_text} Use a chair as a guide for depth. Keep weight on heels and chest up. Film yourself to check form.'
         elif exercise_type == 'pushups':
             return f'{base_text} Start with knee pushups if needed. Keep core tight and body straight. Lower chest to floor height.'
+        elif exercise_type == 'burpees':
+            return f'{base_text} Focus on a solid plank position without sagging hips. Keep the movement fluid but controlled. Land softly from the jump.'
         
         return base_text
     
@@ -308,6 +311,8 @@ class RecommendationEngine:
             return 'Increase reps gradually. Try bodyweight squat circuits: 20 reps, rest 30s, repeat 3-5 times.'
         elif exercise_type == 'pushups':
             return 'Build volume with pyramid sets: 5-10-15-10-5 reps with minimal rest. Focus on maintaining form.'
+        elif exercise_type == 'burpees':
+            return 'Try EMOM (Every Minute on the Minute) training: do 5 burpees every minute for 10 minutes. Focus on consistent quality.'
         
         return 'Gradually increase training volume while maintaining good form.'
     

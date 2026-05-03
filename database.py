@@ -16,6 +16,7 @@ class Database:
         self.db_path = db_path or self._get_db_path()
         if self.connect():
             self._migrate_users_table()
+            self._migrate_exercises_tables()
     
     def _get_db_path(self) -> str:
         """Get database path from secrets or use default"""
@@ -73,6 +74,43 @@ class Database:
         finally:
             if cursor:
                 cursor.close()
+
+    def _migrate_exercises_tables(self):
+        """Add columns and tables for new exercises dynamically"""
+        if not self.is_connected():
+            return
+        
+        cursor = self.connection.cursor()
+        
+        # 1. Add total_burpees to sessions
+        cursor.execute("PRAGMA table_info(sessions)")
+        session_columns = [row[1] for row in cursor.fetchall()]
+        if 'total_burpees' not in session_columns:
+            self.execute_query("ALTER TABLE sessions ADD COLUMN total_burpees INTEGER DEFAULT 0", fetch=False)
+            
+        # 2. Create burpees table if it doesn't exist
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='burpees'")
+        if not cursor.fetchone():
+            burpee_sql = """
+            CREATE TABLE burpees (
+                burpee_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                burpee_number INTEGER NOT NULL,
+                points INTEGER DEFAULT 0,
+                bad_moves INTEGER DEFAULT 0,
+                warnings TEXT,
+                has_danger INTEGER DEFAULT 0,
+                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+            );
+            CREATE INDEX idx_burpees_session_id ON burpees(session_id);
+            CREATE INDEX idx_burpees_timestamp ON burpees(timestamp);
+            CREATE INDEX idx_burpees_session ON burpees(session_id, burpee_number);
+            """
+            self.connection.executescript(burpee_sql)
+            
+        if self.connection:
+            self.connection.commit()
     
     def _migrate_users_table(self):
         """Create tables if they don't exist, then add username, email, and password_hash columns"""
@@ -135,6 +173,7 @@ class Database:
             total_jumps INTEGER DEFAULT 0,
             total_squats INTEGER DEFAULT 0,
             total_pushups INTEGER DEFAULT 0,
+            total_burpees INTEGER DEFAULT 0,
             total_points INTEGER DEFAULT 0,
             total_bad_moves INTEGER DEFAULT 0,
             FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
@@ -194,6 +233,23 @@ class Database:
         CREATE INDEX IF NOT EXISTS idx_pushups_session_id ON pushups(session_id);
         CREATE INDEX IF NOT EXISTS idx_pushups_timestamp ON pushups(timestamp);
         CREATE INDEX IF NOT EXISTS idx_pushups_session ON pushups(session_id, pushup_number);
+
+        -- Burpees table
+        CREATE TABLE IF NOT EXISTS burpees (
+            burpee_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            burpee_number INTEGER NOT NULL,
+            points INTEGER DEFAULT 0,
+            bad_moves INTEGER DEFAULT 0,
+            warnings TEXT,
+            has_danger INTEGER DEFAULT 0,
+            timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (session_id) REFERENCES sessions(session_id) ON DELETE CASCADE
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_burpees_session_id ON burpees(session_id);
+        CREATE INDEX IF NOT EXISTS idx_burpees_timestamp ON burpees(timestamp);
+        CREATE INDEX IF NOT EXISTS idx_burpees_session ON burpees(session_id, burpee_number);
 
         -- Training recommendations table
         CREATE TABLE IF NOT EXISTS training_recommendations (
@@ -369,14 +425,14 @@ class Database:
             if cursor:
                 cursor.close()
     
-    def update_session_totals(self, session_id: int, total_jumps: int, total_points: int, total_bad_moves: int, total_squats: int = 0, total_pushups: int = 0):
+    def update_session_totals(self, session_id: int, total_jumps: int, total_points: int, total_bad_moves: int, total_squats: int = 0, total_pushups: int = 0, total_burpees: int = 0):
         """Update session totals in real-time (without ending the session)"""
         query = """
         UPDATE sessions 
-        SET total_jumps = ?, total_points = ?, total_bad_moves = ?, total_squats = ?, total_pushups = ?
+        SET total_jumps = ?, total_points = ?, total_bad_moves = ?, total_squats = ?, total_pushups = ?, total_burpees = ?
         WHERE session_id = ?
         """
-        self.execute_query(query, (total_jumps, total_points, total_bad_moves, total_squats, total_pushups, session_id), fetch=False)
+        self.execute_query(query, (total_jumps, total_points, total_bad_moves, total_squats, total_pushups, total_burpees, session_id), fetch=False)
         # Force immediate commit to ensure real-time updates
         if self.connection:
             try:
@@ -384,14 +440,31 @@ class Database:
             except:
                 pass
     
-    def end_session(self, session_id: int, total_jumps: int, total_points: int, total_bad_moves: int, total_squats: int = 0, total_pushups: int = 0):
+    def end_session(self, session_id: int, total_jumps: int, total_points: int, total_bad_moves: int, total_squats: int = 0, total_pushups: int = 0, total_burpees: int = 0):
         """End a training session"""
         query = """
         UPDATE sessions 
-        SET end_time = ?, total_jumps = ?, total_points = ?, total_bad_moves = ?, total_squats = ?, total_pushups = ?
+        SET end_time = ?, total_jumps = ?, total_points = ?, total_bad_moves = ?, total_squats = ?, total_pushups = ?, total_burpees = ?
         WHERE session_id = ?
         """
-        self.execute_query(query, (datetime.now(), total_jumps, total_points, total_bad_moves, total_squats, total_pushups, session_id), fetch=False)
+        self.execute_query(query, (datetime.now(), total_jumps, total_points, total_bad_moves, total_squats, total_pushups, total_burpees, session_id), fetch=False)
+
+    def record_burpee(self, session_id: int, burpee_number: int, points: int, 
+                     bad_moves: int, warnings: str, has_danger: bool):
+        """Record a single burpee"""
+        if not self.is_connected():
+            return
+        query = """
+        INSERT INTO burpees (session_id, burpee_number, points, bad_moves, warnings, has_danger, timestamp)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """
+        self.execute_query(query, (session_id, burpee_number, points, bad_moves, warnings, 1 if has_danger else 0, datetime.now()), fetch=False)
+        # Force immediate commit to ensure real-time updates
+        if self.connection:
+            try:
+                self.connection.commit()
+            except:
+                pass
     
     def record_jump(self, session_id: int, jump_number: int, points: int, 
                    bad_moves: int, warnings: str, has_danger: bool):
@@ -500,19 +573,37 @@ class Database:
             ORDER BY total_points DESC, total_count DESC
             LIMIT ?
             """
+        elif exercise_type == 'burpee':
+            query = """
+            SELECT 
+                u.name,
+                u.age,
+                COUNT(DISTINCT s.session_id) as total_sessions,
+                COUNT(b.burpee_id) as total_count,
+                COALESCE(SUM(b.points), 0) as total_points,
+                COALESCE(SUM(b.bad_moves), 0) as total_bad_moves,
+                MAX(s.end_time) as last_session
+            FROM users u
+            JOIN sessions s ON u.user_id = s.user_id
+            JOIN burpees b ON s.session_id = b.session_id
+            WHERE s.total_burpees > 0
+            GROUP BY u.user_id, u.name, u.age
+            ORDER BY total_points DESC, total_count DESC
+            LIMIT ?
+            """
         else:  # all
             query = """
             SELECT 
                 u.name,
                 u.age,
-                SUM(s.total_jumps + s.total_squats + s.total_pushups) as total_count,
+                SUM(s.total_jumps + s.total_squats + s.total_pushups + s.total_burpees) as total_count,
                 SUM(s.total_points) as total_points,
                 SUM(s.total_bad_moves) as total_bad_moves,
                 COUNT(DISTINCT s.session_id) as total_sessions,
                 MAX(s.end_time) as last_session
             FROM users u
             JOIN sessions s ON u.user_id = s.user_id
-            WHERE s.total_points > 0 OR s.total_squats > 0 OR s.total_pushups > 0
+            WHERE s.total_points > 0 OR s.total_squats > 0 OR s.total_pushups > 0 OR s.total_burpees > 0
             GROUP BY u.user_id, u.name, u.age
             ORDER BY total_points DESC, total_count DESC
             LIMIT ?
@@ -527,12 +618,13 @@ class Database:
             SUM(s.total_jumps) as total_jumps,
             SUM(s.total_squats) as total_squats,
             SUM(s.total_pushups) as total_pushups,
+            SUM(s.total_burpees) as total_burpees,
             SUM(s.total_points) as total_points,
             SUM(s.total_bad_moves) as total_bad_moves,
             AVG(s.total_points) as avg_points_per_session,
             MAX(s.end_time) as last_session
         FROM sessions s
-        WHERE s.user_id = ? AND (s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0)
+        WHERE s.user_id = ? AND (s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0 OR s.total_burpees > 0)
         """
         result = self.execute_query(query, (user_id,))
         if result and len(result) > 0:
@@ -543,6 +635,7 @@ class Database:
                 'total_jumps': int(stats.get('total_jumps') or 0),
                 'total_squats': int(stats.get('total_squats') or 0),
                 'total_pushups': int(stats.get('total_pushups') or 0),
+                'total_burpees': int(stats.get('total_burpees') or 0),
                 'total_points': int(stats.get('total_points') or 0),
                 'total_bad_moves': int(stats.get('total_bad_moves') or 0),
                 'avg_points_per_session': float(stats.get('avg_points_per_session') or 0.0),
@@ -557,8 +650,10 @@ class Database:
             where_clause = "s.total_squats > 0"
         elif exercise_type == 'pushup':
             where_clause = "s.total_pushups > 0"
+        elif exercise_type == 'burpee':
+            where_clause = "s.total_burpees > 0"
         else:
-            where_clause = "(s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0)"
+            where_clause = "(s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0 OR s.total_burpees > 0)"
 
         query = f"""
         SELECT 
@@ -569,6 +664,7 @@ class Database:
             s.total_jumps,
             s.total_squats,
             s.total_pushups,
+            s.total_burpees,
             s.total_points,
             s.total_bad_moves
         FROM sessions s
@@ -583,12 +679,12 @@ class Database:
         stats = {}
         
         # Total participants
-        query = "SELECT COUNT(DISTINCT user_id) as count FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0"
+        query = "SELECT COUNT(DISTINCT user_id) as count FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0 OR total_burpees > 0"
         result = self.execute_query(query)
         stats['total_participants'] = result[0]['count'] if result and len(result) > 0 and result[0]['count'] is not None else 0
         
         # Total sessions
-        query = "SELECT COUNT(*) as count FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0"
+        query = "SELECT COUNT(*) as count FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0 OR total_burpees > 0"
         result = self.execute_query(query)
         stats['total_sessions'] = result[0]['count'] if result and len(result) > 0 and result[0]['count'] is not None else 0
         
@@ -607,26 +703,31 @@ class Database:
         result = self.execute_query(query)
         stats['total_pushups'] = int(result[0]['total']) if result and len(result) > 0 and result[0]['total'] is not None else 0
         
+        # Total burpees
+        query = "SELECT SUM(total_burpees) as total FROM sessions WHERE total_burpees > 0"
+        result = self.execute_query(query)
+        stats['total_burpees'] = int(result[0]['total']) if result and len(result) > 0 and result[0]['total'] is not None else 0
+        
         # Total exercises (all combined)
-        stats['total_exercises'] = stats['total_jumps'] + stats['total_squats'] + stats['total_pushups']
+        stats['total_exercises'] = stats['total_jumps'] + stats['total_squats'] + stats['total_pushups'] + stats['total_burpees']
         
         # Total points
-        query = "SELECT SUM(total_points) as total FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0"
+        query = "SELECT SUM(total_points) as total FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0 OR total_burpees > 0"
         result = self.execute_query(query)
         stats['total_points'] = int(result[0]['total']) if result and len(result) > 0 and result[0]['total'] is not None else 0
         
         # Total bad moves
-        query = "SELECT SUM(total_bad_moves) as total FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0"
+        query = "SELECT SUM(total_bad_moves) as total FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0 OR total_burpees > 0"
         result = self.execute_query(query)
         stats['total_bad_moves'] = int(result[0]['total']) if result and len(result) > 0 and result[0]['total'] is not None else 0
         
         # Average exercises per session
-        query = "SELECT AVG(total_jumps + total_squats + total_pushups) as avg FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0"
+        query = "SELECT AVG(total_jumps + total_squats + total_pushups + total_burpees) as avg FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0 OR total_burpees > 0"
         result = self.execute_query(query)
         stats['avg_exercises_per_session'] = float(result[0]['avg']) if result and len(result) > 0 and result[0]['avg'] is not None else 0.0
         
         # Average points per session
-        query = "SELECT AVG(total_points) as avg FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0"
+        query = "SELECT AVG(total_points) as avg FROM sessions WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0 OR total_burpees > 0"
         result = self.execute_query(query)
         stats['avg_points_per_session'] = float(result[0]['avg']) if result and len(result) > 0 and result[0]['avg'] is not None else 0.0
         
@@ -644,7 +745,7 @@ class Database:
             SUM(s.total_jumps) as jumps,
             SUM(s.total_points) as points
         FROM sessions s
-        WHERE (s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0)
+        WHERE (s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0 OR s.total_burpees > 0)
         AND s.start_time >= ?
         GROUP BY DATE(s.start_time)
         ORDER BY date ASC
@@ -657,18 +758,20 @@ class Database:
         SELECT 
             SUM(total_jumps) as jumps,
             SUM(total_squats) as squats,
-            SUM(total_pushups) as pushups
+            SUM(total_pushups) as pushups,
+            SUM(total_burpees) as burpees
         FROM sessions
-        WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0
+        WHERE total_jumps > 0 OR total_squats > 0 OR total_pushups > 0 OR total_burpees > 0
         """
         result = self.execute_query(query)
         if result and len(result) > 0:
             return {
                 'jumps': int(result[0].get('jumps') or 0),
                 'squats': int(result[0].get('squats') or 0),
-                'pushups': int(result[0].get('pushups') or 0)
+                'pushups': int(result[0].get('pushups') or 0),
+                'burpees': int(result[0].get('burpees') or 0)
             }
-        return {'jumps': 0, 'squats': 0, 'pushups': 0}
+        return {'jumps': 0, 'squats': 0, 'pushups': 0, 'burpees': 0}
     
     def get_daily_exercise_stats(self, days: int = 30) -> List[Dict]:
         """Get daily statistics for each exercise type"""
@@ -680,11 +783,12 @@ class Database:
             SUM(s.total_jumps) as jumps,
             SUM(s.total_squats) as squats,
             SUM(s.total_pushups) as pushups,
+            SUM(s.total_burpees) as burpees,
             SUM(s.total_points) as points,
             COUNT(DISTINCT s.user_id) as participants,
             COUNT(s.session_id) as sessions
         FROM sessions s
-        WHERE (s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0)
+        WHERE (s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0 OR s.total_burpees > 0)
         AND s.start_time >= ?
         GROUP BY DATE(s.start_time)
         ORDER BY date ASC
@@ -700,11 +804,12 @@ class Database:
             SUM(s.total_jumps) as jumps,
             SUM(s.total_squats) as squats,
             SUM(s.total_pushups) as pushups,
+            SUM(s.total_burpees) as burpees,
             SUM(s.total_points) as points,
             COUNT(DISTINCT s.user_id) as participants,
             COUNT(s.session_id) as sessions
         FROM sessions s
-        WHERE (s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0)
+        WHERE (s.total_jumps > 0 OR s.total_squats > 0 OR s.total_pushups > 0 OR s.total_burpees > 0)
         AND s.start_time >= ?
         GROUP BY strftime('%Y-%m-%d %H', s.start_time)
         ORDER BY hour ASC
@@ -739,7 +844,7 @@ class Database:
             ORDER BY count DESC
             LIMIT ?
             """
-        else:  # pushup
+        elif exercise_type == 'pushup':
             query = """
             SELECT 
                 u.name,
@@ -748,6 +853,19 @@ class Database:
             FROM users u
             JOIN sessions s ON u.user_id = s.user_id
             WHERE s.total_pushups > 0
+            GROUP BY u.user_id, u.name
+            ORDER BY count DESC
+            LIMIT ?
+            """
+        else:  # burpee
+            query = """
+            SELECT 
+                u.name,
+                SUM(s.total_burpees) as count,
+                SUM(s.total_points) as points
+            FROM users u
+            JOIN sessions s ON u.user_id = s.user_id
+            WHERE s.total_burpees > 0
             GROUP BY u.user_id, u.name
             ORDER BY count DESC
             LIMIT ?
