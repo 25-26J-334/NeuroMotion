@@ -24,6 +24,7 @@ from muscle_heatmap_ui import heatmap_page_v2 as muscle_heatmap_page
 from report_generator import ReportGenerator
 from exercise_validator import ExerciseValidator
 from stepup_detector import StepupDetector
+from biometric_ui import biometric_dashboard_page, biometric_profile_setup_page, add_biometric_widgets_to_sidebar
 import groq
 
 # Fatigue Detection Helper Functions
@@ -1022,6 +1023,10 @@ def render_sidebar(db):
             if st.button("🤖 AI TrainBot", use_container_width=True, type="primary" if st.session_state.page == 'trainbot' else "secondary"):
                 st.session_state.page = 'trainbot'
                 st.rerun()
+
+            if st.button("💓 Biometric Tracking", use_container_width=True, type="primary" if st.session_state.page == 'biometric' else "secondary"):
+                st.session_state.page = 'biometric'
+                st.rerun()
             
 
         if st.button("🏆 Leaderboard", use_container_width=True, type="primary" if st.session_state.page == 'leaderboard' else "secondary"):
@@ -1041,6 +1046,10 @@ def render_sidebar(db):
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
+    
+    # Add biometric widgets to sidebar only when on biometric page
+    if st.session_state.get('page') == 'biometric':
+        add_biometric_widgets_to_sidebar()
 
 def main_app():
     """Main application interface"""
@@ -5167,6 +5176,16 @@ else:
         muscle_heatmap_page()
     elif st.session_state.page == 'trainbot':
         trainbot_page()
+    elif st.session_state.page == 'biometric':
+        # Check if user has biometric profile
+        db = Database()
+        profile = db.get_user_biometric_profile(st.session_state.user_id)
+        if not profile:
+            biometric_profile_setup_page()
+        else:
+            biometric_dashboard_page()
+    elif st.session_state.page == 'biometric_setup':
+        biometric_profile_setup_page()
     elif st.session_state.page == 'recommendations':
         recommendations_page()
     elif st.session_state.page == 'coach_hub':

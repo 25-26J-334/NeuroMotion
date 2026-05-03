@@ -134,8 +134,100 @@ class Database:
             """
             self.connection.executescript(stepup_sql)
             
+        # 5. Create biometric tracking tables
+        self._create_biometric_tables()
+            
         if self.connection:
             self.connection.commit()
+    
+    def _create_biometric_tables(self):
+        """Create tables for biometric tracking data"""
+        if not self.is_connected():
+            return
+        
+        cursor = self.connection.cursor()
+        
+        # Create user biometric profiles table
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='user_biometric_profiles'")
+        if not cursor.fetchone():
+            # Create table first
+            self.connection.execute("""
+            CREATE TABLE user_biometric_profiles (
+                profile_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                age INTEGER NOT NULL,
+                weight REAL NOT NULL,
+                height REAL NOT NULL,
+                gender TEXT NOT NULL,
+                fitness_level TEXT NOT NULL,
+                resting_heart_rate INTEGER,
+                max_heart_rate INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+            """)
+            # Then create index
+            self.connection.execute("CREATE INDEX idx_biometric_profiles_user_id ON user_biometric_profiles(user_id)")
+        
+        # Create biometric sessions table
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='biometric_sessions'")
+        if not cursor.fetchone():
+            # Create table first
+            self.connection.execute("""
+            CREATE TABLE biometric_sessions (
+                session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                training_session_id INTEGER,
+                start_time TIMESTAMP NOT NULL,
+                end_time TIMESTAMP,
+                duration_minutes REAL,
+                total_calories_burned REAL DEFAULT 0,
+                avg_heart_rate INTEGER,
+                max_heart_rate INTEGER,
+                avg_exertion_level TEXT,
+                recovery_time_minutes INTEGER,
+                recovery_type TEXT,
+                recovery_recommendation TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+                FOREIGN KEY (training_session_id) REFERENCES sessions(session_id) ON DELETE SET NULL
+            )
+            """)
+            # Then create indexes
+            self.connection.execute("CREATE INDEX idx_biometric_sessions_user_id ON biometric_sessions(user_id)")
+            self.connection.execute("CREATE INDEX idx_biometric_sessions_training_id ON biometric_sessions(training_session_id)")
+        
+        # Create biometric readings table
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='biometric_readings'")
+        if not cursor.fetchone():
+            # Create table first
+            self.connection.execute("""
+            CREATE TABLE biometric_readings (
+                reading_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                biometric_session_id INTEGER NOT NULL,
+                timestamp TIMESTAMP NOT NULL,
+                heart_rate INTEGER,
+                calories_burned REAL,
+                exertion_level TEXT,
+                recovery_time_minutes INTEGER,
+                vo2_max_estimated REAL,
+                respiratory_rate INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (biometric_session_id) REFERENCES biometric_sessions(session_id) ON DELETE CASCADE
+            )
+            """)
+            # Then create indexes
+            self.connection.execute("CREATE INDEX idx_biometric_readings_session_id ON biometric_readings(biometric_session_id)")
+            self.connection.execute("CREATE INDEX idx_biometric_readings_timestamp ON biometric_readings(timestamp)")
+        
+        # Add biometric columns to existing sessions table
+        cursor.execute("PRAGMA table_info(sessions)")
+        session_columns = [column[1] for column in cursor.fetchall()]
+        
+        if 'biometric_session_id' not in session_columns:
+            self.execute_query("ALTER TABLE sessions ADD COLUMN biometric_session_id INTEGER", fetch=False)
+            self.execute_query("ALTER TABLE sessions ADD COLUMN biometric_data_available INTEGER DEFAULT 0", fetch=False)
     
     def _migrate_users_table(self):
         """Create tables if they don't exist, then add username, email, and password_hash columns"""
@@ -1025,3 +1117,179 @@ class Database:
         ORDER BY priority DESC, created_at DESC
         """
         return self.execute_query(query, (user_id, rec_type)) or []
+    
+    # ==================== BIOMETRIC DATA METHODS ====================
+    
+    def save_user_biometric_profile(self, user_id: int, age: int, weight: float, height: float, 
+                                   gender: str, fitness_level: str, resting_hr: int = None, max_hr: int = None) -> bool:
+        """Save or update user biometric profile"""
+        try:
+            # Check if profile exists
+            existing = self.execute_query(
+                "SELECT profile_id FROM user_biometric_profiles WHERE user_id = ?", 
+                (user_id,)
+            )
+            
+            if existing:
+                # Update existing profile
+                query = """
+                UPDATE user_biometric_profiles 
+                SET age = ?, weight = ?, height = ?, gender = ?, fitness_level = ?, 
+                    resting_heart_rate = ?, max_heart_rate = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE user_id = ?
+                """
+                self.execute_query(query, (age, weight, height, gender, fitness_level, resting_hr, max_hr, user_id), fetch=False)
+            else:
+                # Insert new profile
+                query = """
+                INSERT INTO user_biometric_profiles 
+                (user_id, age, weight, height, gender, fitness_level, resting_heart_rate, max_heart_rate)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """
+                self.execute_query(query, (user_id, age, weight, height, gender, fitness_level, resting_hr, max_hr), fetch=False)
+            
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error saving biometric profile: {e}")
+            return False
+    
+    def get_user_biometric_profile(self, user_id: int) -> Optional[Dict]:
+        """Get user biometric profile"""
+        query = """
+        SELECT * FROM user_biometric_profiles WHERE user_id = ?
+        """
+        result = self.execute_query(query, (user_id,))
+        return dict(result[0]) if result else None
+    
+    def create_biometric_session(self, user_id: int, training_session_id: int = None) -> Optional[int]:
+        """Create a new biometric tracking session"""
+        try:
+            query = """
+            INSERT INTO biometric_sessions 
+            (user_id, training_session_id, start_time)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            """
+            cursor = self.connection.execute(query, (user_id, training_session_id))
+            self.connection.commit()
+            return cursor.lastrowid
+        except Exception as e:
+            print(f"Error creating biometric session: {e}")
+            return None
+    
+    def end_biometric_session(self, biometric_session_id: int, session_summary: Dict) -> bool:
+        """End a biometric session with summary data"""
+        try:
+            query = """
+            UPDATE biometric_sessions 
+            SET end_time = CURRENT_TIMESTAMP,
+                duration_minutes = ?,
+                total_calories_burned = ?,
+                avg_heart_rate = ?,
+                max_heart_rate = ?,
+                avg_exertion_level = ?,
+                recovery_time_minutes = ?,
+                recovery_type = ?,
+                recovery_recommendation = ?
+            WHERE session_id = ?
+            """
+            params = (
+                session_summary.get('session_duration', 0),
+                session_summary.get('total_calories', 0),
+                session_summary.get('avg_heart_rate'),
+                session_summary.get('max_heart_rate'),
+                session_summary.get('avg_exertion'),
+                session_summary.get('recovery_recommendation', {}).get('recovery_time', 0),
+                session_summary.get('recovery_recommendation', {}).get('recovery_type', 'None'),
+                session_summary.get('recovery_recommendation', {}).get('recommendation', ''),
+                biometric_session_id
+            )
+            
+            self.execute_query(query, params, fetch=False)
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error ending biometric session: {e}")
+            return False
+    
+    def add_biometric_reading(self, biometric_session_id: int, reading_data: Dict) -> bool:
+        """Add a biometric reading to a session"""
+        try:
+            query = """
+            INSERT INTO biometric_readings 
+            (biometric_session_id, timestamp, heart_rate, calories_burned, exertion_level, 
+             recovery_time_minutes, vo2_max_estimated, respiratory_rate)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """
+            params = (
+                biometric_session_id,
+                reading_data.get('timestamp', datetime.now()),
+                reading_data.get('heart_rate'),
+                reading_data.get('calories_burned'),
+                reading_data.get('exertion_level'),
+                reading_data.get('recovery_time'),
+                reading_data.get('vo2_max'),
+                reading_data.get('respiratory_rate')
+            )
+            
+            self.execute_query(query, params, fetch=False)
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error adding biometric reading: {e}")
+            return False
+    
+    def get_user_biometric_sessions(self, user_id: int, limit: int = 10) -> List[Dict]:
+        """Get user's biometric session history"""
+        query = """
+        SELECT * FROM biometric_sessions 
+        WHERE user_id = ? AND end_time IS NOT NULL
+        ORDER BY start_time DESC
+        LIMIT ?
+        """
+        result = self.execute_query(query, (user_id, limit))
+        return [dict(row) for row in result] if result else []
+    
+    def get_biometric_session_details(self, session_id: int) -> List[Dict]:
+        """Get detailed readings for a biometric session"""
+        query = """
+        SELECT * FROM biometric_readings 
+        WHERE biometric_session_id = ?
+        ORDER BY timestamp ASC
+        """
+        result = self.execute_query(query, (session_id,))
+        return [dict(row) for row in result] if result else []
+    
+    def get_biometric_analytics(self, user_id: int, days: int = 30) -> Dict:
+        """Get biometric analytics for a user over specified days"""
+        cutoff_date = datetime.now() - timedelta(days=days)
+        
+        query = """
+        SELECT 
+            COUNT(*) as total_sessions,
+            AVG(duration_minutes) as avg_duration,
+            AVG(total_calories_burned) as avg_calories,
+            AVG(avg_heart_rate) as avg_heart_rate,
+            MAX(max_heart_rate) as max_heart_rate,
+            AVG(recovery_time_minutes) as avg_recovery_time
+        FROM biometric_sessions
+        WHERE user_id = ? AND start_time >= ?
+        """
+        
+        result = self.execute_query(query, (user_id, cutoff_date))
+        return dict(result[0]) if result else {}
+    
+    def update_training_session_biometric_link(self, training_session_id: int, biometric_session_id: int) -> bool:
+        """Link training session with biometric session"""
+        try:
+            query = """
+            UPDATE sessions 
+            SET biometric_session_id = ?, biometric_data_available = 1
+            WHERE session_id = ?
+            """
+            self.execute_query(query, (biometric_session_id, training_session_id), fetch=False)
+            self.connection.commit()
+            return True
+        except Exception as e:
+            print(f"Error linking biometric session: {e}")
+            return False

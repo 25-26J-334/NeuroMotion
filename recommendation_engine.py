@@ -7,6 +7,12 @@ import sqlite3
 from datetime import datetime, timedelta
 from typing import List, Dict, Tuple, Optional
 import re
+import os
+try:
+    import groq
+    from streamlit import secrets
+except ImportError:
+    groq = None
 
 class RecommendationEngine:
     def __init__(self, db_path: str = None):
@@ -20,6 +26,19 @@ class RecommendationEngine:
         try:
             self.connection = sqlite3.connect(self.db_path, check_same_thread=False)
             self.connection.row_factory = sqlite3.Row
+            
+            # Initialize Groq Client
+            self.client = None
+            api_key = os.environ.get('GROQ_API_KEY')
+            if not api_key:
+                try:
+                    api_key = secrets.get('GROQ_API_KEY') or secrets.get('groq', {}).get('api_key')
+                except:
+                    pass
+            
+            if api_key and groq:
+                self.client = groq.Groq(api_key=api_key)
+            
             return True
         except Exception as e:
             print(f"Database connection error: {e}")
@@ -444,3 +463,46 @@ class RecommendationEngine:
                 ))
         
         self.connection.commit()
+
+    def generate_ai_narrative(self, user_id: int) -> str:
+        """Generate a human-like coaching narrative using Llama 3 via Groq"""
+        if not self.client:
+            return "AI Coaching Narrative is currently unavailable. Please check your Groq API configuration."
+
+        performance = self.analyze_user_performance(user_id)
+        if not performance:
+            return "Not enough data to generate a coaching narrative yet. Complete a few sessions first!"
+
+        # Construct the data summary for the LLM
+        summary = []
+        for ex, data in performance.items():
+            if isinstance(data, dict) and data.get('total_reps', 0) > 0:
+                summary.append(f"- {ex.title()}: {data['total_reps']} reps, {data['performance_score']:.1f}% mastery, Issue: {data['most_common_issue'] or 'None'}")
+
+        prompt = f"""
+        You are a world-class elite athletic performance coach. 
+        Analyze the following recent performance data for an athlete and provide a concise, motivational, and hyper-personalized coaching note (approx 150 words).
+        
+        ATHLETE DATA:
+        {chr(10).join(summary)}
+        
+        INSTRUCTIONS:
+        1. Be human-like, encouraging, but firm about form.
+        2. Specifically mention one improvement area (e.g., if they have knee valgus, explain why it matters).
+        3. End with a specific 'Coach's Challenge' for their next session.
+        4. Use a supportive and professional tone.
+        """
+
+        try:
+            completion = self.client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=[
+                    {"role": "system", "content": "You are a professional AI Athletic Coach named NeuroMotion AI."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.7,
+                max_tokens=300,
+            )
+            return completion.choices[0].message.content
+        except Exception as e:
+            return f"Error generating narrative: {str(e)}"
