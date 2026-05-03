@@ -21,6 +21,7 @@ from recommendations_ui import recommendations_page, add_recommendations_to_side
 from heatmap_ui import heatmap_page
 from muscle_heatmap_ui import heatmap_page_v2 as muscle_heatmap_page
 from report_generator import ReportGenerator
+from exercise_validator import ExerciseValidator
 import groq
 
 # Fatigue Detection Helper Functions
@@ -1126,6 +1127,14 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
             temp_file.write(uploaded_file.read())
             temp_path = temp_file.name
+            
+        # Validate video content
+        validator = ExerciseValidator()
+        is_valid, msg = validator.validate_video(temp_path, 'jump')
+        if not is_valid:
+            st.error(f"❌ Validation Failed: {msg}")
+            os.unlink(temp_path)
+            return
         
         # Process video
         cap = cv2.VideoCapture(temp_path)
@@ -1779,6 +1788,14 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
             temp_file.write(uploaded_file.read())
             temp_path = temp_file.name
+            
+        # Validate video content
+        validator = ExerciseValidator()
+        is_valid, msg = validator.validate_video(temp_path, 'squat')
+        if not is_valid:
+            st.error(f"❌ Validation Failed: {msg}")
+            os.unlink(temp_path)
+            return
         
         # Process video
         cap = cv2.VideoCapture(temp_path)
@@ -2296,6 +2313,14 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
         with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as temp_file:
             temp_file.write(uploaded_file.read())
             temp_path = temp_file.name
+            
+        # Validate video content
+        validator = ExerciseValidator()
+        is_valid, msg = validator.validate_video(temp_path, 'pushup')
+        if not is_valid:
+            st.error(f"❌ Validation Failed: {msg}")
+            os.unlink(temp_path)
+            return
         
         # Process video
         cap = cv2.VideoCapture(temp_path)
