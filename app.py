@@ -4801,7 +4801,14 @@ def trainbot_page():
                     
                     # Create and offer PDF download
                     try:
-                        filepath, filename = report_gen.create_pdf_report(st.session_state.user_name, report_content, "Comprehensive Training Report")
+                        # Calculate total exercises for the report
+                        stats['total_exercises'] = (stats.get('total_jumps', 0) + 
+                                                   stats.get('total_squats', 0) + 
+                                                   stats.get('total_pushups', 0) + 
+                                                   stats.get('total_burpees', 0) + 
+                                                   stats.get('total_stepups', 0))
+                        
+                        filepath, filename = report_gen.create_rich_report(st.session_state.user_name, stats, report_content)
                         with open(filepath, "rb") as f:
                             st.download_button(
                                 "📥 Download Training Report PDF", 
