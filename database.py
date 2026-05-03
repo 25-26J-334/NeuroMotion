@@ -169,6 +169,9 @@ class Database:
         if 'password_hash' not in columns:
             self.execute_query("ALTER TABLE users ADD COLUMN password_hash TEXT", fetch=False)
             changes_made = True
+        if 'role' not in columns:
+            self.execute_query("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'athlete'", fetch=False)
+            changes_made = True
 
         if changes_made and self.connection:
             self.connection.commit()
@@ -184,6 +187,10 @@ class Database:
             user_id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL,
             age INTEGER NOT NULL,
+            username TEXT,
+            email TEXT,
+            password_hash TEXT,
+            role TEXT DEFAULT 'athlete',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
 
@@ -327,7 +334,7 @@ class Database:
         except Exception as e:
             print(f"Error creating base tables: {e}")
     
-    def register_user(self, username: str, email: str, password: str, name: str, age: int) -> Optional[int]:
+    def register_user(self, username: str, email: str, password: str, name: str, age: int, role: str = 'athlete') -> Optional[int]:
         """Register a new user with hashed password"""
         if not self.is_connected():
             return None
@@ -343,13 +350,13 @@ class Database:
         password_hash = bcrypt.hashpw(password.encode('utf-8'), salt).decode('utf-8')
         
         query = """
-        INSERT INTO users (username, email, password_hash, name, age, created_at) 
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO users (username, email, password_hash, name, age, role, created_at) 
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         """
         cursor = None
         try:
             cursor = self.connection.cursor()
-            cursor.execute(query, (username, email, password_hash, name, age, datetime.now()))
+            cursor.execute(query, (username, email, password_hash, name, age, role, datetime.now()))
             self.connection.commit()
             return cursor.lastrowid
         except Exception as e:
@@ -797,6 +804,30 @@ class Database:
         
         return stats
     
+    def get_all_athletes_stats(self) -> List[Dict]:
+        """Get summary statistics for all athletes for the Coach Dashboard"""
+        if not self.is_connected():
+            return []
+        
+        query = """
+        SELECT 
+            u.user_id,
+            u.name,
+            u.age,
+            u.email,
+            COUNT(DISTINCT s.session_id) as total_sessions,
+            SUM(s.total_jumps + s.total_squats + s.total_pushups + s.total_burpees + s.total_stepups) as total_reps,
+            SUM(s.total_points) as total_points,
+            SUM(s.total_bad_moves) as total_bad_moves,
+            MAX(s.end_time) as last_active
+        FROM users u
+        LEFT JOIN sessions s ON u.user_id = s.user_id
+        WHERE u.role = 'athlete' OR u.role IS NULL
+        GROUP BY u.user_id, u.name, u.age, u.email
+        ORDER BY total_points DESC
+        """
+        return self.execute_query(query) or []
+
     def get_daily_stats(self, days: int = 30) -> List[Dict]:
         """Get daily statistics for charts"""
         # SQLite date arithmetic

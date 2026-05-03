@@ -133,6 +133,8 @@ if 'user_id' not in st.session_state:
     st.session_state.user_id = None
 if 'user_name' not in st.session_state:
     st.session_state.user_name = None
+if 'user_role' not in st.session_state:
+    st.session_state.user_role = 'athlete'
 if 'user_age' not in st.session_state:
     st.session_state.user_age = None
 if 'session_id' not in st.session_state:
@@ -556,6 +558,7 @@ def login_page(db):
                     st.session_state.user_id = user['user_id']
                     st.session_state.user_name = user['name']
                     st.session_state.user_age = user['age']
+                    st.session_state.user_role = user.get('role', 'athlete')
                     st.session_state.page = 'main'
                     st.success(f"Welcome back, {user['name']}!")
                     time.sleep(1)
@@ -690,6 +693,7 @@ def registration_page(db):
             
         name = st.text_input("Full Name", placeholder="Enter your full name")
         age = st.number_input("Age", min_value=10, max_value=120, value=20)
+        role = st.selectbox("Join as*", ["athlete", "coach"], help="Athletes train, Coaches manage teams")
         
         submit = st.form_submit_button("Register & Start Training", use_container_width=True)
         
@@ -701,11 +705,12 @@ def registration_page(db):
             elif len(password) < 6:
                 st.error("Password must be at least 6 characters long.")
             else:
-                user_id = db.register_user(username, email, password, name or username, age)
+                user_id = db.register_user(username, email, password, name or username, age, role=role)
                 if user_id:
                     st.session_state.user_id = user_id
                     st.session_state.user_name = name or username
                     st.session_state.user_age = age
+                    st.session_state.user_role = role
                     st.session_state.page = 'main'
                     st.success(f"Welcome, {name or username}! Your account has been created.")
                     time.sleep(1)
@@ -740,74 +745,283 @@ def user_registration():
     else:
         login_page(db)
 
+def coach_dashboard_page():
+    """Admin/Coach Dashboard for managing athletes and viewing team stats"""
+    db = initialize_database()
+    st.title("📋 Coach Command Center")
+    
+    tab1, tab2 = st.tabs(["📊 Team Analytics", "🏃 Athlete Management"])
+    
+    with tab1:
+        st.markdown("### Team Performance Overview")
+        
+        # Fetch team stats
+        overall = db.get_overall_stats()
+        daily_stats = db.get_daily_stats(days=30)
+        
+        # Top metrics
+        col1, col2, col3, col4 = st.columns(4)
+        with col1:
+            st.metric("Total Team Reps", overall.get('total_exercises', 0))
+        with col2:
+            st.metric("Total Points", overall.get('total_points', 0))
+        with col3:
+            st.metric("Avg Points/Session", f"{overall.get('avg_points_per_session', 0):.1f}")
+        with col4:
+            st.metric("Bad Move Rate", f"{(overall.get('total_bad_moves', 0) / max(1, overall.get('total_exercises', 0)) * 100):.1f}%")
+
+        st.markdown("---")
+        
+        # Team Trends
+        if daily_stats:
+            df_daily = pd.DataFrame(daily_stats)
+            
+            chart_col1, chart_col2 = st.columns(2)
+            
+            with chart_col1:
+                st.markdown("#### Team Activity (Reps)")
+                fig_reps = px.bar(df_daily, x='date', y=['jumps', 'squats', 'pushups', 'burpees', 'stepups'],
+                                title="Daily Reps Distribution",
+                                labels={'value': 'Count', 'date': 'Date', 'variable': 'Exercise'})
+                fig_reps.update_layout(template="plotly_dark", barmode='stack')
+                st.plotly_chart(fig_reps, use_container_width=True)
+                
+            with chart_col2:
+                st.markdown("#### Participation Trend")
+                fig_part = px.line(df_daily, x='date', y='participants', 
+                                 title="Daily Active Athletes",
+                                 markers=True, labels={'participants': 'Athletes', 'date': 'Date'})
+                fig_part.update_layout(template="plotly_dark")
+                st.plotly_chart(fig_part, use_container_width=True)
+            
+            st.markdown("---")
+            chart_col3, chart_col4 = st.columns(2)
+            
+            with chart_col3:
+                st.markdown("#### Form Quality by Exercise")
+                # Calculate bad move rate per exercise from overall stats
+                ex_metrics = []
+                for ex in ['jumps', 'squats', 'pushups', 'burpees', 'stepups']:
+                    reps = overall.get(f'total_{ex}', 0)
+                    # Note: We don't have bad moves per exercise globally in the current query, 
+                    # but we can estimate or use points as a proxy for quality. 
+                    # For now, let's use the average points per exercise if available.
+                    ex_metrics.append({'Exercise': ex.capitalize(), 'Volume': reps})
+                
+                fig_pie = px.pie(pd.DataFrame(ex_metrics), values='Volume', names='Exercise', 
+                                title="Total Volume Distribution",
+                                hole=0.4, color_discrete_sequence=px.colors.qualitative.Pastel)
+                fig_pie.update_layout(template="plotly_dark")
+                st.plotly_chart(fig_pie, use_container_width=True)
+
+            with chart_col4:
+                st.markdown("#### Team Mastery Score Trend")
+                fig_points = px.area(df_daily, x='date', y='points', 
+                                   title="Total Team Points (Daily)",
+                                   line_shape='spline', color_discrete_sequence=['#00A8E8'])
+                fig_points.update_layout(template="plotly_dark")
+                st.plotly_chart(fig_points, use_container_width=True)
+
+            st.markdown("---")
+            # Age vs Performance Correlation
+            st.markdown("#### 🧬 Athlete Demographics vs Performance")
+            athletes_df = pd.DataFrame(db.get_all_athletes_stats())
+            if not athletes_df.empty:
+                fig_scatter = px.scatter(athletes_df, x='age', y='total_points', size='total_reps', 
+                                       color='total_bad_moves', hover_name='name',
+                                       title="Age vs Points (Bubble Size = Total Reps, Color = Errors)",
+                                       labels={'age': 'Age', 'total_points': 'Total Points', 'total_bad_moves': 'Bad Moves'})
+                fig_scatter.update_layout(template="plotly_dark")
+                st.plotly_chart(fig_scatter, use_container_width=True)
+        else:
+            st.info("No team activity data recorded in the last 30 days.")
+
+    with tab2:
+        st.markdown("### Athlete Management & Individual Stats")
+        
+        # Fetch athletes
+        athletes = db.get_all_athletes_stats()
+        
+        if athletes:
+            df = pd.DataFrame(athletes)
+            # Rename columns for display
+            df_display = df.rename(columns={
+                'name': 'Athlete',
+                'total_sessions': 'Sessions',
+                'total_reps': 'Total Reps',
+                'total_points': 'Points',
+                'total_bad_moves': 'Bad Moves',
+                'last_active': 'Last Active'
+            })
+            st.dataframe(df_display[['Athlete', 'Sessions', 'Total Reps', 'Points', 'Bad Moves', 'Last Active']], use_container_width=True)
+            
+            # Individual Athlete Selection for Drill-down
+            st.markdown("#### 🔍 Individual Drill-down")
+            selected_athlete_name = st.selectbox("Select an athlete to view detailed stats", ["Select..."] + [a['name'] for a in athletes])
+            
+            if selected_athlete_name != "Select...":
+                selected_athlete = next(a for a in athletes if a['name'] == selected_athlete_name)
+                
+                # Exercise Filter for drill-down
+                st.markdown("---")
+                ex_col1, ex_col2 = st.columns([1, 3])
+                with ex_col1:
+                    exercise_filter = st.radio("Focus on Exercise:", ["Overall", "Jumps", "Squats", "Pushups", "Burpees", "Stepups"])
+                
+                ex_map = {"Overall": "all", "Jumps": "jump", "Squats": "squat", "Pushups": "pushup", "Burpees": "burpee", "Stepups": "stepup"}
+                mapped_ex = ex_map[exercise_filter]
+                
+                # Show athlete details
+                detail_col1, detail_col2 = st.columns([1, 2])
+                with detail_col1:
+                    st.info(f"**Athlete:** {selected_athlete['name']}\n\n**Age:** {selected_athlete['age']}\n\n**Email:** {selected_athlete['email']}")
+                    
+                    # Fetch detailed stats for this user
+                    user_stats = db.get_user_stats(selected_athlete['user_id'])
+                    if user_stats:
+                        if exercise_filter == "Overall":
+                            st.write("**Full Exercise Breakdown:**")
+                            stats_data = {
+                                'Exercise': ['Jumps', 'Squats', 'Pushups', 'Burpees', 'Stepups'],
+                                'Count': [user_stats['total_jumps'], user_stats['total_squats'], user_stats['total_pushups'], user_stats['total_burpees'], user_stats['total_stepups']]
+                            }
+                        else:
+                            st.write(f"**{exercise_filter} Statistics:**")
+                            ex_key = f"total_{exercise_filter.lower().replace('-', '')}"
+                            if exercise_filter == "Jumps": ex_key = "total_jumps"
+                            elif exercise_filter == "Squats": ex_key = "total_squats"
+                            elif exercise_filter == "Pushups": ex_key = "total_pushups"
+                            elif exercise_filter == "Burpees": ex_key = "total_burpees"
+                            elif exercise_filter == "Stepups": ex_key = "total_stepups"
+                            
+                            stats_data = {
+                                'Metric': ['Total Reps', 'Total Points', 'Bad Moves'],
+                                'Value': [user_stats.get(ex_key, 0), user_stats.get('total_points', 0), user_stats.get('total_bad_moves', 0)]
+                            }
+                        st.table(pd.DataFrame(stats_data))
+                
+                with detail_col2:
+                    # Comparative Metrics Chart
+                    st.markdown("#### ⚖️ Performance vs Team Average")
+                    team_avg_reps = overall.get('total_exercises', 0) / max(1, overall.get('total_participants', 1))
+                    team_avg_points = overall.get('total_points', 0) / max(1, overall.get('total_participants', 1))
+                    team_avg_bad = overall.get('total_bad_moves', 0) / max(1, overall.get('total_participants', 1))
+                    
+                    comp_data = {
+                        'Metric': ['Total Reps', 'Total Points', 'Bad Moves'],
+                        'Athlete': [selected_athlete['total_reps'], selected_athlete['total_points'], selected_athlete['total_bad_moves']],
+                        'Team Avg': [team_avg_reps, team_avg_points, team_avg_bad]
+                    }
+                    df_comp = pd.DataFrame(comp_data)
+                    fig_comp = go.Figure()
+                    fig_comp.add_trace(go.Bar(x=df_comp['Metric'], y=df_comp['Athlete'], name=selected_athlete['name'], marker_color='#00A8E8'))
+                    fig_comp.add_trace(go.Bar(x=df_comp['Metric'], y=df_comp['Team Avg'], name='Team Average', marker_color='rgba(255, 255, 255, 0.3)'))
+                    fig_comp.update_layout(barmode='group', template="plotly_dark", height=300, margin=dict(t=20, b=20))
+                    st.plotly_chart(fig_comp, use_container_width=True)
+
+                    # Performance chart for selected athlete filtered by exercise
+                    recent_sessions = db.get_recent_sessions(selected_athlete['user_id'], exercise_type=mapped_ex, limit=15)
+                    if recent_sessions:
+                        session_df = pd.DataFrame(recent_sessions)
+                        
+                        y_axis = 'total_points'
+                        y_label = 'Points'
+                        if exercise_filter != "Overall":
+                            ex_col_map = {"Jumps": "total_jumps", "Squats": "total_squats", "Pushups": "total_pushups", "Burpees": "total_burpees", "Stepups": "total_stepups"}
+                            y_axis = ex_col_map[exercise_filter]
+                            y_label = f"{exercise_filter} Count"
+                        
+                        fig = px.line(session_df, x='end_time', y=y_axis, title=f"{exercise_filter} Trend - {selected_athlete['name']}",
+                                    markers=True, labels={y_axis: y_label, 'end_time': 'Date'})
+                        fig.update_layout(template="plotly_dark", hovermode="x unified")
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                        st.markdown(f"##### Recent {exercise_filter} Sessions")
+                        display_cols = ['end_time', y_axis, 'total_points', 'total_bad_moves']
+                        df_sessions = session_df[display_cols].copy()
+                        df_sessions.columns = ['Date', 'Reps', 'Points', 'Errors']
+                        st.dataframe(df_sessions, use_container_width=True, hide_index=True)
+                    else:
+                        st.write(f"No {exercise_filter} history available for this athlete yet.")
+        else:
+            st.info("No athletes registered yet.")
+
 def render_sidebar(db):
     """Render a persistent sidebar available across all pages"""
     with st.sidebar:
         st.title(f"👤 {st.session_state.user_name}")
-        st.caption(f"Age: {st.session_state.user_age}")
+        role_icon = "👔" if st.session_state.user_role == 'coach' else "🏃"
+        st.caption(f"{role_icon} {st.session_state.user_role.capitalize()} | Age: {st.session_state.user_age}")
         
         st.markdown("---")
         
-        # Exercise Type Dropdown (Styled as a button)
-        with st.expander("🏃 Exercise Type", expanded=False):
-            if st.button("🏃 Jump Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'jump' and st.session_state.page == 'main' else "secondary"):
-                st.session_state.page = 'main'
-                st.session_state.exercise_type = 'jump'
-                st.session_state.session_id = None
-                st.session_state.detector = None
+        if st.session_state.user_role == 'coach':
+            if st.button("📋 Coach Hub", use_container_width=True, type="primary" if st.session_state.page == 'coach_hub' or st.session_state.page == 'main' else "secondary"):
+                st.session_state.page = 'coach_hub'
                 st.rerun()
-            
-            if st.button("🦵 Squat Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'squat' and st.session_state.page == 'main' else "secondary"):
-                st.session_state.page = 'main'
-                st.session_state.exercise_type = 'squat'
-                st.session_state.session_id = None
-                st.session_state.detector = None
-                st.rerun()
-            
-            if st.button("💪 Push-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'pushup' and st.session_state.page == 'main' else "secondary"):
-                st.session_state.page = 'main'
-                st.session_state.exercise_type = 'pushup'
-                st.session_state.session_id = None
-                st.session_state.detector = None
-                st.rerun()
-
-            if st.button("🔥 Burpee Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'burpee' and st.session_state.page == 'main' else "secondary"):
-                st.session_state.page = 'main'
-                st.session_state.exercise_type = 'burpee'
-                st.session_state.session_id = None
-                st.session_state.detector = None
-                st.rerun()
-
-            if st.button("🪜 Step-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'stepup' and st.session_state.page == 'main' else "secondary"):
-                st.session_state.page = 'main'
-                st.session_state.exercise_type = 'stepup'
-                st.session_state.session_id = None
-                st.session_state.detector = None
-                st.rerun()
-
-            if st.button("⚔️ 1v1 Multiplayer", use_container_width=True, type="primary" if st.session_state.exercise_type == 'multiplayer' and st.session_state.page == 'main' else "secondary"):
-                st.session_state.page = 'main'
-                st.session_state.exercise_type = 'multiplayer'
-                st.session_state.session_id = None
-                st.session_state.detector = None
-                st.rerun()
-
             st.markdown("---")
-            if st.button("🦴 3D Muscle Map", use_container_width=True, type="primary" if st.session_state.page == 'muscle_map' else "secondary"):
-                st.session_state.page = 'muscle_map'
-                st.rerun()
         
-        if st.button("📊 Dashboard", use_container_width=True, type="primary" if st.session_state.page == 'dashboard' else "secondary"):
-            st.session_state.page = 'dashboard'
-            st.rerun()
+        if st.session_state.user_role == 'athlete':
+            # Exercise Type Dropdown (Styled as a button)
+            with st.expander("🏃 Exercise Type", expanded=False):
+                if st.button("🏃 Jump Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'jump' and st.session_state.page == 'main' else "secondary"):
+                    st.session_state.page = 'main'
+                    st.session_state.exercise_type = 'jump'
+                    st.session_state.session_id = None
+                    st.session_state.detector = None
+                    st.rerun()
+                
+                if st.button("🦵 Squat Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'squat' and st.session_state.page == 'main' else "secondary"):
+                    st.session_state.page = 'main'
+                    st.session_state.exercise_type = 'squat'
+                    st.session_state.session_id = None
+                    st.session_state.detector = None
+                    st.rerun()
+                
+                if st.button("💪 Push-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'pushup' and st.session_state.page == 'main' else "secondary"):
+                    st.session_state.page = 'main'
+                    st.session_state.exercise_type = 'pushup'
+                    st.session_state.session_id = None
+                    st.session_state.detector = None
+                    st.rerun()
 
-        if st.button("🎯 Training Plans", use_container_width=True, type="primary" if st.session_state.page == 'recommendations' else "secondary"):
-            st.session_state.page = 'recommendations'
-            st.rerun()
+                if st.button("🔥 Burpee Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'burpee' and st.session_state.page == 'main' else "secondary"):
+                    st.session_state.page = 'main'
+                    st.session_state.exercise_type = 'burpee'
+                    st.session_state.session_id = None
+                    st.session_state.detector = None
+                    st.rerun()
 
-        if st.button("🤖 AI TrainBot", use_container_width=True, type="primary" if st.session_state.page == 'trainbot' else "secondary"):
-            st.session_state.page = 'trainbot'
-            st.rerun()
+                if st.button("🪜 Step-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'stepup' and st.session_state.page == 'main' else "secondary"):
+                    st.session_state.page = 'main'
+                    st.session_state.exercise_type = 'stepup'
+                    st.session_state.session_id = None
+                    st.session_state.detector = None
+                    st.rerun()
+
+                if st.button("⚔️ 1v1 Multiplayer", use_container_width=True, type="primary" if st.session_state.exercise_type == 'multiplayer' and st.session_state.page == 'main' else "secondary"):
+                    st.session_state.page = 'main'
+                    st.session_state.exercise_type = 'multiplayer'
+                    st.session_state.session_id = None
+                    st.session_state.detector = None
+                    st.rerun()
+
+                st.markdown("---")
+                if st.button("🦴 3D Muscle Map", use_container_width=True, type="primary" if st.session_state.page == 'muscle_map' else "secondary"):
+                    st.session_state.page = 'muscle_map'
+                    st.rerun()
+            
+            if st.button("📊 Dashboard", use_container_width=True, type="primary" if st.session_state.page == 'dashboard' else "secondary"):
+                st.session_state.page = 'dashboard'
+                st.rerun()
+
+            if st.button("🎯 Training Plans", use_container_width=True, type="primary" if st.session_state.page == 'recommendations' else "secondary"):
+                st.session_state.page = 'recommendations'
+                st.rerun()
+
+            if st.button("🤖 AI TrainBot", use_container_width=True, type="primary" if st.session_state.page == 'trainbot' else "secondary"):
+                st.session_state.page = 'trainbot'
+                st.rerun()
             
 
         if st.button("🏆 Leaderboard", use_container_width=True, type="primary" if st.session_state.page == 'leaderboard' else "secondary"):
@@ -4955,6 +5169,11 @@ else:
         trainbot_page()
     elif st.session_state.page == 'recommendations':
         recommendations_page()
+    elif st.session_state.page == 'coach_hub':
+        coach_dashboard_page()
     else:
-        main_app()
+        if st.session_state.user_role == 'coach' and st.session_state.page == 'main':
+             coach_dashboard_page()
+        else:
+            main_app()
 
