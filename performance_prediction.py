@@ -189,6 +189,10 @@ def _exercise_key(exercise_type: str) -> str:
         return "squat"
     if et in {"pushup", "push-up", "pushups", "push-ups"}:
         return "pushup"
+    if et in {"burpee", "burpees"}:
+        return "burpee"
+    if et in {"stepup", "step-up", "stepups", "step-ups"}:
+        return "stepup"
     return "jump"
 
 
@@ -198,7 +202,13 @@ def _session_count_field(exercise_type: str) -> str:
         return "total_jumps"
     if et == "squat":
         return "total_squats"
-    return "total_pushups"
+    if et == "pushup":
+        return "total_pushups"
+    if et == "burpee":
+        return "total_burpees"
+    if et == "stepup":
+        return "total_stepups"
+    return "total_jumps"
 
 
 @dataclass

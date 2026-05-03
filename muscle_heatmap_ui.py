@@ -21,6 +21,8 @@ def render_3d_heatmap(user_id, exercise_data=None):
             'jumps': 0,
             'squats': 0,
             'pushups': 0,
+            'burpees': 0,
+            'stepups': 0,
             'bad_moves': 0,
             'valgus_count': 0,
             'lean_count': 0,
@@ -32,6 +34,8 @@ def render_3d_heatmap(user_id, exercise_data=None):
                 stats['jumps'] += s.get('total_jumps', 0) or 0
                 stats['squats'] += s.get('total_squats', 0) or 0
                 stats['pushups'] += s.get('total_pushups', 0) or 0
+                stats['burpees'] += s.get('total_burpees', 0) or 0
+                stats['stepups'] += s.get('total_stepups', 0) or 0
                 stats['bad_moves'] += s.get('total_bad_moves', 0) or 0
         
         # Mocking some granular stress for demo if bad_moves exist
@@ -43,18 +47,23 @@ def render_3d_heatmap(user_id, exercise_data=None):
         exercise_data = stats
 
     # 2. Muscle Intensity Logic (Normalized 0-1)
+    # Step-ups target: Quads (High), Glutes (High), Calves (Medium), Core (Low)
     # Target Muscles
-    quads = min(1.0, (exercise_data['squats'] * 0.05 + exercise_data['jumps'] * 0.03))
-    glutes = min(1.0, (exercise_data['squats'] * 0.04 + exercise_data['jumps'] * 0.02))
-    chest = min(1.0, (exercise_data['pushups'] * 0.05))
-    triceps = min(1.0, (exercise_data['pushups'] * 0.03))
-    calves = min(1.0, (exercise_data['jumps'] * 0.06))
-    core = min(1.0, (exercise_data['pushups'] * 0.02 + exercise_data['squats'] * 0.01 + exercise_data['jumps'] * 0.01))
+    quads = min(1.0, (exercise_data['squats'] * 0.05 + exercise_data['jumps'] * 0.03 + 
+                     exercise_data.get('burpees', 0) * 0.04 + exercise_data.get('stepups', 0) * 0.06))
+    glutes = min(1.0, (exercise_data['squats'] * 0.04 + exercise_data['jumps'] * 0.02 + 
+                      exercise_data.get('burpees', 0) * 0.03 + exercise_data.get('stepups', 0) * 0.05))
+    chest = min(1.0, (exercise_data['pushups'] * 0.05 + exercise_data.get('burpees', 0) * 0.04))
+    triceps = min(1.0, (exercise_data['pushups'] * 0.03 + exercise_data.get('burpees', 0) * 0.02))
+    calves = min(1.0, (exercise_data['jumps'] * 0.06 + exercise_data.get('stepups', 0) * 0.04))
+    core = min(1.0, (exercise_data['pushups'] * 0.02 + exercise_data['squats'] * 0.01 + 
+                    exercise_data['jumps'] * 0.01 + exercise_data.get('burpees', 0) * 0.03 + 
+                    exercise_data.get('stepups', 0) * 0.02))
     
     # Stress (Red)
     knee_stress = min(1.0, (exercise_data.get('valgus_count', 0) * 0.2 + exercise_data.get('toe_count', 0) * 0.15))
     back_stress = min(1.0, (exercise_data.get('lean_count', 0) * 0.3))
-    shoulder_stress = min(1.0, (exercise_data['pushups'] * 0.01)) # Default minor stress
+    shoulder_stress = min(1.0, (exercise_data['pushups'] * 0.01 + exercise_data.get('burpees', 0) * 0.01)) 
 
     muscle_values = {
         'quads': quads,

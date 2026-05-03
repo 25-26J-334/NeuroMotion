@@ -51,7 +51,8 @@ class RecommendationEngine:
             'jumps': self._analyze_exercise_performance(user_id, 'jumps', sessions),
             'squats': self._analyze_exercise_performance(user_id, 'squats', sessions),
             'pushups': self._analyze_exercise_performance(user_id, 'pushups', sessions),
-            'burpees': self._analyze_exercise_performance(user_id, 'burpees', sessions)
+            'burpees': self._analyze_exercise_performance(user_id, 'burpees', sessions),
+            'stepups': self._analyze_exercise_performance(user_id, 'stepups', sessions)
         }
         
         return performance
@@ -154,7 +155,7 @@ class RecommendationEngine:
         recommendations = []
         
         # Generate recommendations for each exercise type
-        for exercise_type in ['jumps', 'squats', 'pushups', 'burpees']:
+        for exercise_type in ['jumps', 'squats', 'pushups', 'burpees', 'stepups']:
             exercise_perf = performance[exercise_type]
             
             if exercise_perf['total_reps'] > 0:
@@ -300,6 +301,8 @@ class RecommendationEngine:
             return f'{base_text} Start with knee pushups if needed. Keep core tight and body straight. Lower chest to floor height.'
         elif exercise_type == 'burpees':
             return f'{base_text} Focus on a solid plank position without sagging hips. Keep the movement fluid but controlled. Land softly from the jump.'
+        elif exercise_type == 'stepups':
+            return f'{base_text} Ensure your entire foot is on the step. Drive through your heel to stand up. Maintain an upright posture throughout.'
         
         return base_text
     
@@ -313,6 +316,8 @@ class RecommendationEngine:
             return 'Build volume with pyramid sets: 5-10-15-10-5 reps with minimal rest. Focus on maintaining form.'
         elif exercise_type == 'burpees':
             return 'Try EMOM (Every Minute on the Minute) training: do 5 burpees every minute for 10 minutes. Focus on consistent quality.'
+        elif exercise_type == 'stepups':
+            return 'Increase volume with alternating lead legs. Try 3 sets of 15 reps per leg with 45s rest.'
         
         return 'Gradually increase training volume while maintaining good form.'
     

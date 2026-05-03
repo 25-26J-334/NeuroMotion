@@ -106,6 +106,19 @@ def show_detailed_recommendation_full_page(recommendation: dict):
         with tip_col3:
             st.markdown("#### 🦾 Elbow Position")
             st.markdown("Keep your elbows at about 45 degrees from your body")
+
+    elif exercise_focus == 'stepups':
+        st.markdown("## 💡 Step-up Training Tips")
+        tip_col1, tip_col2, tip_col3 = st.columns(3)
+        with tip_col1:
+            st.markdown("#### 🪜 Foot Placement")
+            st.markdown("Place your entire foot on the step, not just the ball")
+        with tip_col2:
+            st.markdown("#### 🚀 Heel Drive")
+            st.markdown("Drive through the heel of the lead leg to stand up")
+        with tip_col3:
+            st.markdown("#### 🧍 Upright Posture")
+            st.markdown("Keep your chest up and avoid leaning too far forward")
     
     st.markdown("---")
     
@@ -214,7 +227,7 @@ def recommendations_page():
     with col3:
         selected_exercise = st.selectbox(
             "By Exercise",
-            ["All", "jumps", "squats", "pushups", "all"],
+            ["All", "jumps", "squats", "pushups", "burpees", "stepups", "all"],
             key="filter_exercise"
         )
     
@@ -300,6 +313,8 @@ def display_recommendation_card(recommendation: dict, index: int, priority: str)
         'jumps': '🏃',
         'squats': '🦵',
         'pushups': '💪',
+        'burpees': '🔥',
+        'stepups': '🪜',
         'all': '🏋️'
     }
     
@@ -360,6 +375,8 @@ def display_performance_charts(analytics: dict, user_id: int, db: Database):
         'jumps': '#00F3FF',    # Neon Cyan
         'squats': '#FF00E5',   # Neon Pink/Magenta
         'pushups': '#ADFF2F',  # GreenYellow (Bright Neon)
+        'burpees': '#FFD700',  # Gold
+        'stepups': '#9B59B6',  # Purple
         'performance': '#00FF00',
         'fatigue': '#FF3131'
     }

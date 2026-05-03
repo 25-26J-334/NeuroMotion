@@ -109,9 +109,12 @@ class ExerciseValidator:
                 
         if detected_exercise == expected_exercise:
             return True, "Validation passed"
+        elif expected_exercise == "stepup" and (detected_exercise in ["jump", "squat"]):
+            # Step-ups often look like partial jumps or squats to the simple heuristic
+            return True, "Validation passed (Step-up detected via vertical movement)"
         else:
             # Provide user-friendly exercise names
-            names = {'jump': 'Jump', 'squat': 'Squat', 'pushup': 'Push-up', 'burpee': 'Burpee'}
+            names = {'jump': 'Jump', 'squat': 'Squat', 'pushup': 'Push-up', 'burpee': 'Burpee', 'stepup': 'Step-up'}
             det_name = names.get(detected_exercise, detected_exercise)
             exp_name = names.get(expected_exercise, expected_exercise)
             return False, f"Expected a {exp_name} video, but detected {det_name} movements."

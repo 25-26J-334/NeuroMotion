@@ -23,6 +23,7 @@ from heatmap_ui import heatmap_page
 from muscle_heatmap_ui import heatmap_page_v2 as muscle_heatmap_page
 from report_generator import ReportGenerator
 from exercise_validator import ExerciseValidator
+from stepup_detector import StepupDetector
 import groq
 
 # Fatigue Detection Helper Functions
@@ -143,7 +144,9 @@ if 'detector' not in st.session_state:
 if 'processing' not in st.session_state:
     st.session_state.processing = False
 if 'exercise_type' not in st.session_state:
-    st.session_state.exercise_type = 'jump'  # 'jump' or 'squat'
+    st.session_state.exercise_type = 'jump'  # Default exercise
+if 'su_detector' not in st.session_state:
+    st.session_state.su_detector = None
 if 'page' not in st.session_state:
     st.session_state.page = 'login' # Start with login page
 if 'session_stats' not in st.session_state:
@@ -152,12 +155,14 @@ if 'session_stats' not in st.session_state:
         'total_squats': 0,
         'total_pushups': 0,
         'total_burpees': 0,
+        'total_stepups': 0,
         'total_points': 0,
         'total_bad_moves': 0,
         'jumps_data': [],
         'squats_data': [],
         'pushups_data': [],
-        'burpees_data': []
+        'burpees_data': [],
+        'stepups_data': []
     }
 if 'squat_detector' not in st.session_state:
     st.session_state.squat_detector = None
@@ -177,7 +182,7 @@ if 'performance_prediction' not in st.session_state:
     st.session_state.performance_prediction = None
 if 'performance_prediction_exercise' not in st.session_state:
     st.session_state.performance_prediction_exercise = None
-for ex in ['jump', 'squat', 'pushup', 'burpee']:
+for ex in ['jump', 'squat', 'pushup', 'burpee', 'stepup']:
     if f'{ex}_best_rep_gif' not in st.session_state:
         st.session_state[f'{ex}_best_rep_gif'] = None
     if f'{ex}_worst_rep_gif' not in st.session_state:
@@ -773,6 +778,13 @@ def render_sidebar(db):
                 st.session_state.detector = None
                 st.rerun()
 
+            if st.button("🪜 Step-up Session", use_container_width=True, type="primary" if st.session_state.exercise_type == 'stepup' and st.session_state.page == 'main' else "secondary"):
+                st.session_state.page = 'main'
+                st.session_state.exercise_type = 'stepup'
+                st.session_state.session_id = None
+                st.session_state.detector = None
+                st.rerun()
+
             if st.button("⚔️ 1v1 Multiplayer", use_container_width=True, type="primary" if st.session_state.exercise_type == 'multiplayer' and st.session_state.page == 'main' else "secondary"):
                 st.session_state.page = 'main'
                 st.session_state.exercise_type = 'multiplayer'
@@ -804,10 +816,14 @@ def render_sidebar(db):
         
         if st.button("🚪 Logout", use_container_width=True):
             if st.session_state.session_id:
-                db.end_session(st.session_state.session_id, st.session_state.session_stats['total_jumps'], 
-                             st.session_state.session_stats['total_points'], st.session_state.session_stats['total_bad_moves'],
-                             st.session_state.session_stats.get('total_squats', 0), st.session_state.session_stats.get('total_pushups', 0),
-                             st.session_state.session_stats.get('total_burpees', 0))
+                db.end_session(st.session_state.session_id, 
+                             st.session_state.session_stats['total_jumps'], 
+                             st.session_state.session_stats['total_points'], 
+                             st.session_state.session_stats['total_bad_moves'],
+                             st.session_state.session_stats['total_squats'], 
+                             st.session_state.session_stats['total_pushups'],
+                             st.session_state.session_stats['total_burpees'],
+                             st.session_state.session_stats['total_stepups'])
             for key in list(st.session_state.keys()):
                 del st.session_state[key]
             st.rerun()
@@ -832,6 +848,8 @@ def main_app():
         main_app_pushup(db)
     elif st.session_state.exercise_type == 'burpee':
         main_app_burpee(db)
+    elif st.session_state.exercise_type == 'stepup':
+        main_app_stepup(db)
     else:
         main_app_jump(db)
 
@@ -1111,6 +1129,69 @@ def render_highlights_panel(exercise_type):
             else:
                 st.info("No Worst Rep highlight available yet.")
 
+def render_session_analysis(exercise_type):
+    """Render session-specific analysis: graphs and tables"""
+    data_key = f"{exercise_type}s_data"
+    if exercise_type == 'burpee':
+        data_key = "burpees_data"
+    elif exercise_type == 'stepup':
+        data_key = "stepups_data"
+    elif exercise_type == 'pushup':
+        data_key = "pushups_data"
+        
+    if data_key not in st.session_state.session_stats or not st.session_state.session_stats[data_key]:
+        return
+
+    st.markdown("---")
+    st.markdown("### 📊 Session Analysis")
+    
+    data = st.session_state.session_stats[data_key]
+    df = pd.DataFrame(data)
+    
+    # Graphs
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("#### Points Trend")
+        fig_points = px.line(df, x=df.index + 1, y='points', markers=True,
+                            labels={'x': 'Rep Number', 'points': 'Points'},
+                            title='Points per Rep')
+        # Customize chart
+        fig_points.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font_color='white'
+        )
+        st.plotly_chart(fig_points, use_container_width=True)
+        
+    with col2:
+        st.markdown("#### Form Quality")
+        fig_bad = px.bar(df, x=df.index + 1, y='bad_moves',
+                        labels={'x': 'Rep Number', 'bad_moves': 'Bad Moves'},
+                        title='Errors per Rep')
+        # Customize chart
+        fig_bad.update_layout(
+            paper_bgcolor='rgba(0,0,0,0)',
+            plot_bgcolor='rgba(0,0,0,0)',
+            font_color='white'
+        )
+        st.plotly_chart(fig_bad, use_container_width=True)
+        
+    # Table
+    st.markdown("#### Detailed Rep History")
+    # Clean up warnings for display if it's a list
+    display_df = df.copy()
+    if 'warnings' in display_df.columns:
+        display_df['warnings'] = display_df['warnings'].apply(lambda x: ", ".join(x) if isinstance(x, list) else x)
+    
+    cols_to_show = ['points', 'bad_moves', 'warnings']
+    if 'has_danger' in display_df.columns:
+        cols_to_show.append('has_danger')
+    elif 'danger_detected' in display_df.columns:
+        cols_to_show.append('danger_detected')
+        
+    st.dataframe(display_df[cols_to_show], use_container_width=True)
+
 def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="medium"):
     """Process uploaded video file"""
     # Initialize detector
@@ -1234,8 +1315,10 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
                     st.session_state.session_stats['total_jumps'],
                     st.session_state.session_stats['total_points'],
                     st.session_state.session_stats['total_bad_moves'],
-                    0,  # total_squats for jump session
-                    0   # total_pushups for jump session
+                    st.session_state.session_stats['total_squats'],
+                    st.session_state.session_stats['total_pushups'],
+                    st.session_state.session_stats['total_burpees'],
+                    st.session_state.session_stats['total_stepups']
                 )
                 # Small delay to ensure database commit completes
                 time.sleep(0.01)
@@ -1339,8 +1422,10 @@ def process_video_file(uploaded_file, db, calibration_frames=100, jump_height="m
                 st.session_state.session_stats['total_jumps'],
                 st.session_state.session_stats['total_points'],
                 st.session_state.session_stats['total_bad_moves'],
-                0,  # total_squats for jump session
-                0   # total_pushups for jump session
+                st.session_state.session_stats['total_squats'],
+                st.session_state.session_stats['total_pushups'],
+                st.session_state.session_stats['total_burpees'],
+                st.session_state.session_stats['total_stepups']
             )
             st.session_state.session_start_time = None
         
@@ -1470,8 +1555,10 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
                     st.session_state.session_stats['total_jumps'],
                     st.session_state.session_stats['total_points'],
                     st.session_state.session_stats['total_bad_moves'],
-                    0,  # total_squats for jump session
-                    0   # total_pushups for jump session
+                    st.session_state.session_stats['total_squats'],
+                    st.session_state.session_stats['total_pushups'],
+                    st.session_state.session_stats['total_burpees'],
+                    st.session_state.session_stats['total_stepups']
                 )
                 # Small delay to ensure database commit completes
                 time.sleep(0.01)
@@ -1556,8 +1643,10 @@ def process_live_camera(db, calibration_frames=100, jump_height="medium"):
                 st.session_state.session_stats['total_jumps'],
                 st.session_state.session_stats['total_points'],
                 st.session_state.session_stats['total_bad_moves'],
-                0,  # total_squats for jump session
-                0   # total_pushups for jump session
+                st.session_state.session_stats['total_squats'],
+                st.session_state.session_stats['total_pushups'],
+                st.session_state.session_stats['total_burpees'],
+                st.session_state.session_stats['total_stepups']
             )
             st.session_state.session_start_time = None
         
@@ -1892,11 +1981,13 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
                 # Update session totals in database in real-time
                 db.update_session_totals(
                     st.session_state.session_id,
-                    0,  # total_jumps for squat session
+                    st.session_state.session_stats['total_jumps'],
                     st.session_state.session_stats['total_points'],
                     st.session_state.session_stats['total_bad_moves'],
-                    st.session_state.session_stats.get('total_squats', 0),
-                    0   # total_pushups for squat session
+                    st.session_state.session_stats['total_squats'],
+                    st.session_state.session_stats['total_pushups'],
+                    st.session_state.session_stats['total_burpees'],
+                    st.session_state.session_stats['total_stepups']
                 )
                 # Small delay to ensure database commit completes
                 time.sleep(0.01)
@@ -1975,11 +2066,13 @@ def process_squat_video_file(uploaded_file, db, calibration_frames=100):
         if st.session_state.session_id:
             db.end_session(
                 st.session_state.session_id,
-                0,  # total_jumps for squat session
+                st.session_state.session_stats['total_jumps'],
                 st.session_state.session_stats['total_points'],
                 st.session_state.session_stats['total_bad_moves'],
-                st.session_state.session_stats.get('total_squats', 0),
-                0  # total_pushups for squat session
+                st.session_state.session_stats['total_squats'],
+                st.session_state.session_stats['total_pushups'],
+                st.session_state.session_stats['total_burpees'],
+                st.session_state.session_stats['total_stepups']
             )
             st.session_state.session_start_time = None
         
@@ -2102,11 +2195,13 @@ def process_squat_live_camera(db, calibration_frames=100):
                 # Update session totals in database in real-time
                 db.update_session_totals(
                     st.session_state.session_id,
-                    0,  # total_jumps for squat session
+                    st.session_state.session_stats['total_jumps'],
                     st.session_state.session_stats['total_points'],
                     st.session_state.session_stats['total_bad_moves'],
-                    st.session_state.session_stats.get('total_squats', 0),
-                    0   # total_pushups for squat session
+                    st.session_state.session_stats['total_squats'],
+                    st.session_state.session_stats['total_pushups'],
+                    st.session_state.session_stats['total_burpees'],
+                    st.session_state.session_stats['total_stepups']
                 )
                 # Small delay to ensure database commit completes
                 time.sleep(0.01)
@@ -2187,11 +2282,13 @@ def process_squat_live_camera(db, calibration_frames=100):
         if st.session_state.session_id:
             db.end_session(
                 st.session_state.session_id,
-                0,  # total_jumps for squat session
+                st.session_state.session_stats['total_jumps'],
                 st.session_state.session_stats['total_points'],
                 st.session_state.session_stats['total_bad_moves'],
-                st.session_state.session_stats.get('total_squats', 0),
-                0  # total_pushups for squat session
+                st.session_state.session_stats['total_squats'],
+                st.session_state.session_stats['total_pushups'],
+                st.session_state.session_stats['total_burpees'],
+                st.session_state.session_stats['total_stepups']
             )
             st.session_state.session_start_time = None
         
@@ -2418,11 +2515,13 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
                     # Update session totals in database in real-time
                     db.update_session_totals(
                         st.session_state.session_id,
-                        0,  # total_jumps for push-up session
+                        st.session_state.session_stats['total_jumps'],
                         st.session_state.session_stats['total_points'],
                         st.session_state.session_stats['total_bad_moves'],
-                        0,  # total_squats for push-up session
-                        st.session_state.session_stats.get('total_pushups', 0)
+                        st.session_state.session_stats['total_squats'],
+                        st.session_state.session_stats['total_pushups'],
+                        st.session_state.session_stats['total_burpees'],
+                        st.session_state.session_stats['total_stepups']
                     )
                     # Show success notification
                     show_db_update_notification('pushup', status['pushup_count'], success=True)
@@ -2506,11 +2605,13 @@ def process_pushup_video_file(uploaded_file, db, calibration_frames=100):
         if st.session_state.session_id:
             db.end_session(
                 st.session_state.session_id,
-                0,  # total_jumps for push-up session
+                st.session_state.session_stats['total_jumps'],
                 st.session_state.session_stats['total_points'],
                 st.session_state.session_stats['total_bad_moves'],
-                0,  # total_squats for push-up session
-                st.session_state.session_stats.get('total_pushups', 0)
+                st.session_state.session_stats['total_squats'],
+                st.session_state.session_stats['total_pushups'],
+                st.session_state.session_stats['total_burpees'],
+                st.session_state.session_stats['total_stepups']
             )
             st.session_state.session_start_time = None
         
@@ -2634,11 +2735,13 @@ def process_pushup_live_camera(db, calibration_frames=100):
                     # Update session totals in database in real-time
                     db.update_session_totals(
                         st.session_state.session_id,
-                        0,  # total_jumps for push-up session
+                        st.session_state.session_stats['total_jumps'],
                         st.session_state.session_stats['total_points'],
                         st.session_state.session_stats['total_bad_moves'],
-                        0,  # total_squats for push-up session
-                        st.session_state.session_stats.get('total_pushups', 0)
+                        st.session_state.session_stats['total_squats'],
+                        st.session_state.session_stats['total_pushups'],
+                        st.session_state.session_stats['total_burpees'],
+                        st.session_state.session_stats['total_stepups']
                     )
                     # Show success notification
                     show_db_update_notification('pushup', status['pushup_count'], success=True)
@@ -2724,11 +2827,13 @@ def process_pushup_live_camera(db, calibration_frames=100):
         if st.session_state.session_id:
             db.end_session(
                 st.session_state.session_id,
-                0,  # total_jumps for push-up session
+                st.session_state.session_stats['total_jumps'],
                 st.session_state.session_stats['total_points'],
                 st.session_state.session_stats['total_bad_moves'],
-                0,  # total_squats for push-up session
-                st.session_state.session_stats.get('total_pushups', 0)
+                st.session_state.session_stats['total_squats'],
+                st.session_state.session_stats['total_pushups'],
+                st.session_state.session_stats['total_burpees'],
+                st.session_state.session_stats['total_stepups']
             )
             st.session_state.session_start_time = None
         
@@ -2901,7 +3006,8 @@ def process_burpee_video_file(uploaded_file, db, calibration_frames=50):
                     st.session_state.session_stats['total_bad_moves'],
                     st.session_state.session_stats['total_squats'],
                     st.session_state.session_stats['total_pushups'],
-                    current_count
+                    current_count,
+                    st.session_state.session_stats['total_stepups']
                 )
                 db.record_burpee(
                     st.session_state.session_id,
@@ -3008,7 +3114,8 @@ def process_burpee_live_camera(db, calibration_frames=50):
                     st.session_state.session_stats['total_bad_moves'],
                     st.session_state.session_stats['total_squats'],
                     st.session_state.session_stats['total_pushups'],
-                    current_count
+                    current_count,
+                    st.session_state.session_stats['total_stepups']
                 )
                 db.record_burpee(
                     st.session_state.session_id,
@@ -3048,6 +3155,314 @@ def process_burpee_live_camera(db, calibration_frames=50):
     time.sleep(1)
     st.rerun()
 
+def main_app_stepup(db):
+    """Main step-up training interface"""
+    st.title("🪜 Step-up Training Session")
+    
+    # Voice Alerts Toggle
+    st.session_state.voice_alerts_enabled = st.toggle("🎙️ Enable Voice Alerts", value=st.session_state.voice_alerts_enabled, key="voice_toggle_stepup")
+    
+    # Session stats display
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric("Total Step-ups", st.session_state.session_stats['total_stepups'])
+    with col2:
+        st.metric("Total Points", st.session_state.session_stats['total_points'])
+    with col3:
+        st.metric("Bad Moves", st.session_state.session_stats['total_bad_moves'])
+    with col4:
+        avg_points = (st.session_state.session_stats['total_points'] / 
+                     max(st.session_state.session_stats['total_stepups'], 1))
+        st.metric("Avg Points/Step-up", f"{avg_points:.1f}")
+
+
+    # Video input selection
+    input_method = st.radio(
+        "Select Input Method:",
+        ["📹 Upload Video", "📷 Use Camera"],
+        horizontal=True
+    )
+    
+    if input_method == "📹 Upload Video":
+        uploaded_file = st.file_uploader(
+            "Upload a video file",
+            type=['mp4', 'avi', 'mov', 'mkv'],
+            help="Upload a video file to analyze step-ups"
+        )
+        
+        if uploaded_file is not None:
+            col1, col2 = st.columns([2, 1])
+            with col1:
+                start_button = st.button("▶️ Start Processing", use_container_width=True)
+            with col2:
+                calibration_frames = st.number_input(
+                    "Calibration Frames",
+                    min_value=10,
+                    max_value=300,
+                    value=50,
+                    step=10,
+                    help="Number of frames to use for calibration (default: 50)"
+                )
+            
+            if start_button:
+                process_stepup_video_file(uploaded_file, db, calibration_frames)
+    
+    else:  # Camera
+        st.info("💡 Position yourself in front of the camera standing up. Click 'Start Processing' to begin live step-up detection!")
+        
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            start_button = st.button("▶️ Start Processing", use_container_width=True, type="primary")
+        with col2:
+            calibration_frames = st.number_input(
+                "Calibration Frames",
+                min_value=10,
+                max_value=300,
+                value=50,
+                step=10,
+                help="Number of frames to use for calibration (default: 50)",
+                key="stepup_camera_calibration_frames"
+            )
+        
+        if start_button:
+            process_stepup_live_camera(db, calibration_frames)
+
+    # Performance Analysis Section
+    if st.session_state.session_stats['total_stepups'] > 0:
+        render_highlights_panel('stepup')
+        render_session_analysis('stepup')
+        st.markdown("---")
+        render_performance_prediction_panel('stepup')
+
+def process_stepup_video_file(uploaded_file, db, calibration_frames=50):
+    """Process an uploaded video file for step-ups"""
+    if 'su_detector' not in st.session_state or st.session_state.su_detector is None:
+        st.session_state.su_detector = StepupDetector(calibration_frames=calibration_frames)
+    
+    st.session_state.processing = True
+    
+    if st.session_state.session_id is None:
+        if st.session_state.user_id:
+            st.session_id = db.create_session(st.session_state.user_id)
+            st.session_state.session_id = st.session_id
+        else:
+            st.error("Please login first to track your progress!")
+            return
+            
+    temp_file = "temp_stepup_video.mp4"
+    with open(temp_file, "wb") as f:
+        f.write(uploaded_file.read())
+        
+    validator = ExerciseValidator()
+    is_valid, validation_msg = validator.validate_video(temp_file, "stepup")
+    
+    if not is_valid:
+        st.error(f"❌ Video Validation Failed: {validation_msg}")
+        st.warning("Please upload a video showing step-ups.")
+        import os
+        if os.path.exists(temp_file):
+            os.remove(temp_file)
+        return
+        
+    st.success("✅ Video validated successfully! Analyzing step-ups...")
+    
+    cap = cv2.VideoCapture(temp_file)
+    if not cap.isOpened():
+        st.error("Could not open the video file.")
+        return
+        
+    # Create side-by-side layout: 60% video, 40% metrics/status
+    video_col, status_col = st.columns([0.6, 0.4])
+    
+    stframe = video_col.empty()
+    status_text = status_col.empty()
+    metrics_placeholder = status_col.empty()
+    warnings_placeholder = status_col.empty()
+    stop_button = st.button("⏹️ Stop Processing")
+    
+    frame_count = 0
+    start_time = time.time()
+    
+    while cap.isOpened() and not stop_button:
+        ret, frame = cap.read()
+        if not ret:
+            break
+            
+        frame_count += 1
+        
+        # Process frame
+        annotated_frame, status = st.session_state.su_detector.process_frame(frame, frame_index=frame_count)
+        
+        # Check for new rep
+        current_count = status['stepup_count']
+        if current_count > st.session_state.session_stats['total_stepups']:
+            st.session_state.session_stats['total_stepups'] = current_count
+            st.session_state.session_stats['total_points'] += status['points']
+            st.session_state.session_stats['total_bad_moves'] += status['bad_moves']
+            
+            # Save rep data
+            rep_data = st.session_state.su_detector.rep_history[-1]
+            st.session_state.session_stats['stepups_data'].append(rep_data)
+            
+            # DB update
+            if st.session_state.session_id:
+                db.update_session_totals(
+                    st.session_state.session_id,
+                    st.session_state.session_stats['total_jumps'],
+                    st.session_state.session_stats['total_points'],
+                    st.session_state.session_stats['total_bad_moves'],
+                    st.session_state.session_stats['total_squats'],
+                    st.session_state.session_stats['total_pushups'],
+                    st.session_state.session_stats['total_burpees'],
+                    current_count
+                )
+                db.record_stepup(
+                    st.session_state.session_id,
+                    current_count,
+                    status['points'],
+                    status['bad_moves'],
+                    ",".join(status['warnings']),
+                    status['danger_detected']
+                )
+                show_db_update_notification('Step-up', current_count, success=True)
+                
+            # Update prediction
+            update_performance_prediction(db, 'stepup', current_count)
+
+        # UI updates
+        rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+        stframe.image(rgb_frame, channels="RGB")
+        status_text.markdown(f"### Status: {status['status_text']}")
+        
+        with metrics_placeholder.container():
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Step-ups", status['stepup_count'])
+            c2.metric("Latest Points", status['points'])
+            c3.metric("FPS", int(frame_count / (time.time() - start_time)))
+            
+        if status['danger_detected']:
+            warnings_placeholder.error("⚠️ DANGEROUS MOVEMENT DETECTED: " + ", ".join(status['warnings']))
+            if status['warnings']:
+                trigger_voice_alert(status['warnings'][0])
+        elif status['warnings']:
+            warnings_placeholder.warning("⚠️ Form Warnings: " + ", ".join(status['warnings']))
+        else:
+            warnings_placeholder.empty()
+
+    cap.release()
+    st.session_state.processing = False
+    
+    if st.session_state.session_stats['total_stepups'] > 0:
+        extract_highlights_gifs(temp_file, st.session_state.session_stats['stepups_data'], 'stepup')
+        
+    import os
+    if os.path.exists(temp_file):
+        os.remove(temp_file)
+    st.success("Session ended!")
+    time.sleep(1)
+    st.rerun()
+
+def process_stepup_live_camera(db, calibration_frames=50):
+    """Process live camera feed for step-ups"""
+    if 'su_detector' not in st.session_state or st.session_state.su_detector is None:
+        st.session_state.su_detector = StepupDetector(calibration_frames=calibration_frames)
+    else:
+        st.session_state.su_detector.start_recalibration()
+        
+    st.session_state.processing = True
+    
+    if st.session_state.session_id is None:
+        if st.session_state.user_id:
+            st.session_state.session_id = db.create_session(st.session_state.user_id)
+        else:
+            st.warning("Running in Guest Mode - Progress won't be saved.")
+    
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+        st.error("Could not open camera.")
+        return
+        
+    # Create side-by-side layout
+    video_col, status_col = st.columns([0.6, 0.4])
+    
+    stframe = video_col.empty()
+    status_text = status_col.empty()
+    metrics_placeholder = status_col.empty()
+    warnings_placeholder = status_col.empty()
+    stop_button = st.button("⏹️ Stop Camera")
+    
+    frame_count = 0
+    start_time = time.time()
+    
+    while cap.isOpened() and not stop_button:
+        ret, frame = cap.read()
+        if not ret:
+            st.error("Failed to read from camera.")
+            break
+            
+        frame = cv2.flip(frame, 1)
+        frame_count += 1
+        
+        annotated_frame, status = st.session_state.su_detector.process_frame(frame, frame_index=frame_count)
+        
+        current_count = status['stepup_count']
+        if current_count > st.session_state.session_stats['total_stepups']:
+            st.session_state.session_stats['total_stepups'] = current_count
+            st.session_state.session_stats['total_points'] += status['points']
+            st.session_state.session_stats['total_bad_moves'] += status['bad_moves']
+            
+            # Save rep data
+            rep_data = st.session_state.su_detector.rep_history[-1]
+            st.session_state.session_stats['stepups_data'].append(rep_data)
+            
+            if st.session_state.session_id:
+                db.update_session_totals(
+                    st.session_state.session_id,
+                    st.session_state.session_stats['total_jumps'],
+                    st.session_state.session_stats['total_points'],
+                    st.session_state.session_stats['total_bad_moves'],
+                    st.session_state.session_stats['total_squats'],
+                    st.session_state.session_stats['total_pushups'],
+                    st.session_state.session_stats['total_burpees'],
+                    current_count
+                )
+                db.record_stepup(
+                    st.session_state.session_id,
+                    current_count,
+                    status['points'],
+                    status['bad_moves'],
+                    ",".join(status['warnings']),
+                    status['danger_detected']
+                )
+                show_db_update_notification('Step-up', current_count, success=True)
+                
+            update_performance_prediction(db, 'stepup', current_count)
+
+        rgb_frame = cv2.cvtColor(annotated_frame, cv2.COLOR_BGR2RGB)
+        stframe.image(rgb_frame, channels="RGB")
+        status_text.markdown(f"### Status: {status['status_text']}")
+        
+        with metrics_placeholder.container():
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Step-ups", status['stepup_count'])
+            c2.metric("Latest Points", status['points'])
+            c3.metric("FPS", int(frame_count / (time.time() - start_time)))
+            
+        if status['danger_detected']:
+            warnings_placeholder.error("⚠️ DANGEROUS MOVEMENT DETECTED: " + ", ".join(status['warnings']))
+            if status['warnings']:
+                trigger_voice_alert(status['warnings'][0])
+        elif status['warnings']:
+            warnings_placeholder.warning("⚠️ Form Warnings: " + ", ".join(status['warnings']))
+        else:
+            warnings_placeholder.empty()
+
+    cap.release()
+    st.session_state.processing = False
+    st.success("Session ended!")
+    time.sleep(1)
+    st.rerun()
+
 def leaderboard_page():
     """Display leaderboard with separate sections for each exercise"""
     st.title("🏆 Leaderboards")
@@ -3058,7 +3473,7 @@ def leaderboard_page():
         return
     
     # Create tabs for different leaderboards
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏃 Jumps", "🦵 Squats", "💪 Push-ups", "🔥 Burpees", "📊 Overall"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🏃 Jumps", "🦵 Squats", "💪 Push-ups", "🔥 Burpees", "🪜 Step-ups", "📊 Overall"])
     
     # Jump Leaderboard
     with tab1:
@@ -3192,8 +3607,41 @@ def leaderboard_page():
         else:
             st.info("No burpee data available yet. Start training to see rankings!")
     
-    # Overall Leaderboard
+    # Step-up Leaderboard
     with tab5:
+        st.subheader("🪜 Step-up Leaderboard")
+        leaderboard = db.get_leaderboard(limit=20, exercise_type='stepup')
+        
+        if leaderboard:
+            df = pd.DataFrame(leaderboard)
+            df['total_points'] = df['total_points'].fillna(0).astype(int)
+            df['total_count'] = df['total_count'].fillna(0).astype(int)
+            df['total_bad_moves'] = df['total_bad_moves'].fillna(0).astype(int)
+            df['Rank'] = range(1, len(df) + 1)
+            
+            df_display = df[['Rank', 'name', 'age', 'total_count', 'total_points', 
+                           'total_bad_moves', 'total_sessions', 'last_session']]
+            df_display.columns = ['Rank', 'Name', 'Age', 'Total Step-ups', 'Total Points', 
+                                 'Bad Moves', 'Sessions', 'Last Session']
+            
+            st.dataframe(df_display, use_container_width=True, hide_index=True)
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                fig = px.bar(df.head(10), x='name', y='total_points', 
+                            title="Top 10 by Points", labels={'name': 'Name', 'total_points': 'Points'},
+                            color_discrete_sequence=['#FF2E2E'])
+                st.plotly_chart(fig, use_container_width=True, key="stepup_leaderboard_points")
+            with col2:
+                fig = px.bar(df.head(10), x='name', y='total_count',
+                            title="Top 10 by Step-ups", labels={'name': 'Name', 'total_count': 'Step-ups'},
+                            color_discrete_sequence=['#9B59B6'])
+                st.plotly_chart(fig, use_container_width=True, key="stepup_leaderboard_stepups")
+        else:
+            st.info("No step-up data available yet. Start training to see rankings!")
+
+    # Overall Leaderboard
+    with tab6:
         st.subheader("📊 Overall Leaderboard")
         leaderboard = db.get_leaderboard(limit=20, exercise_type='all')
         
@@ -3307,7 +3755,7 @@ def dashboard_page():
     
     st.markdown(f"""
     <div class="dashboard-card">
-        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
             <div class="metric-container">
                 <div class="metric-label">🏃 Total Jumps</div>
                 <div class="metric-value" style="color: #00A8E8;">{stats.get('total_jumps', 0)}</div>
@@ -3324,6 +3772,10 @@ def dashboard_page():
                 <div class="metric-label">🔥 Total Burpees</div>
                 <div class="metric-value" style="color: #FFD700;">{stats.get('total_burpees', 0)}</div>
             </div>
+            <div class="metric-container">
+                <div class="metric-label">🪜 Total Step-ups</div>
+                <div class="metric-value" style="color: #9B59B6;">{stats.get('total_stepups', 0)}</div>
+            </div>
         </div>
     </div>
     """, unsafe_allow_html=True)
@@ -3338,10 +3790,10 @@ def dashboard_page():
     
     with col1:
         st.markdown("#### Exercise Distribution")
-        if exercise_dist['jumps'] + exercise_dist['squats'] + exercise_dist['pushups'] + exercise_dist.get('burpees', 0) > 0:
+        if exercise_dist['jumps'] + exercise_dist['squats'] + exercise_dist['pushups'] + exercise_dist.get('burpees', 0) + exercise_dist.get('stepups', 0) > 0:
             df_pie = pd.DataFrame({
-                'exercise': ['Jumps', 'Squats', 'Push-ups', 'Burpees'],
-                'value': [exercise_dist['jumps'], exercise_dist['squats'], exercise_dist['pushups'], exercise_dist.get('burpees', 0)]
+                'exercise': ['Jumps', 'Squats', 'Push-ups', 'Burpees', 'Step-ups'],
+                'value': [exercise_dist['jumps'], exercise_dist['squats'], exercise_dist['pushups'], exercise_dist.get('burpees', 0), exercise_dist.get('stepups', 0)]
             })
             fig_pie = px.pie(
                 df_pie,
@@ -3353,7 +3805,8 @@ def dashboard_page():
                     'Jumps': '#00A8E8',
                     'Squats': '#F28500',
                     'Push-ups': '#66FF00',
-                    'Burpees': '#FFD700'
+                    'Burpees': '#FFD700',
+                    'Step-ups': '#9B59B6'
                 }
             )
             st.plotly_chart(fig_pie, use_container_width=True, key="dashboard_pie_chart")
@@ -3406,6 +3859,16 @@ def dashboard_page():
                     marker_color='#FFD700'
                 ))
             
+            top_stepups = db.get_top_performers_by_exercise('stepup', 5)
+            if top_stepups:
+                df_stepups = pd.DataFrame(top_stepups)
+                fig_bar.add_trace(go.Bar(
+                    name='Step-ups',
+                    x=df_stepups['name'],
+                    y=df_stepups['count'],
+                    marker_color='#9B59B6'
+                ))
+            
             fig_bar.update_layout(
                 title="Top 5 Performers by Exercise Type",
                 xaxis_title="User",
@@ -3420,11 +3883,15 @@ def dashboard_page():
     if hourly_stats:
         st.markdown("#### 🕒 Time Trends (Last 24 Hours)")
         df_time = pd.DataFrame(hourly_stats)
+        # Ensure all required columns exist
+        for _col in ['jumps', 'squats', 'pushups', 'burpees', 'stepups', 'points', 'participants', 'sessions']:
+            if _col not in df_time.columns:
+                df_time[_col] = 0
+                
         df_time['hour'] = pd.to_datetime(df_time['hour'])
         df_time = df_time.sort_values('hour')
-        for _col in ['jumps', 'squats', 'pushups', 'burpees', 'points', 'participants', 'sessions']:
-            if _col in df_time.columns:
-                df_time[_col] = pd.to_numeric(df_time[_col], errors='coerce').fillna(0)
+        for _col in ['jumps', 'squats', 'pushups', 'burpees', 'stepups', 'points', 'participants', 'sessions']:
+            df_time[_col] = pd.to_numeric(df_time[_col], errors='coerce').fillna(0)
         hour_end = pd.Timestamp.now().floor('H')
         hour_start = hour_end - pd.Timedelta(hours=23)
         all_hours = pd.date_range(start=hour_start, end=hour_end, freq='H')
@@ -3435,9 +3902,8 @@ def dashboard_page():
             .rename_axis('hour')
             .reset_index()
         )
-        for _col in ['jumps', 'squats', 'pushups', 'burpees', 'points', 'participants', 'sessions']:
-            if _col in df_time.columns:
-                df_time[_col] = df_time[_col].fillna(0)
+        for _col in ['jumps', 'squats', 'pushups', 'burpees', 'stepups', 'points', 'participants', 'sessions']:
+            df_time[_col] = df_time[_col].fillna(0)
         
         # Line Chart - Exercises Over Time
         col1, col2 = st.columns(2)
@@ -3471,6 +3937,13 @@ def dashboard_page():
                 mode='lines+markers',
                 name='Burpees',
                 line=dict(color='#FFD700', width=2)
+            ))
+            fig_line.add_trace(go.Scatter(
+                x=df_time['hour'],
+                y=df_time['stepups'],
+                mode='lines+markers',
+                name='Step-ups',
+                line=dict(color='#9B59B6', width=2)
             ))
             fig_line.update_layout(
                 title="Exercise Count Over Time (Hourly)",
