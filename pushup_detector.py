@@ -4,6 +4,7 @@ Separate from jump_detector.py and squat_detector.py to keep functionality isola
 """
 import cv2
 import mediapipe as mp
+import mediapipe_compat  # noqa: F401 — patches mp.solutions for mediapipe >= 0.10
 import numpy as np
 from math import degrees, atan2
 from typing import Dict, List, Tuple
@@ -26,6 +27,13 @@ class PushupDetector:
         self.HEAD_POSITION_THRESHOLD = 0.1  # Head should be aligned with body
         self.ARM_ANGLE_THRESHOLD = 30  # Arms should be at proper angle (not too wide/narrow)
         self.HIP_SAG_THRESHOLD = 0.1  # Hips should not sag too much
+        self.MIN_CALIBRATION_VISIBILITY = 0.30
+        self.MIN_COUNTING_VISIBILITY = 0.40
+        self.MAX_MISSING_FRAMES = 10
+        self.PUSH_ENTER_MARGIN = 0.02
+        self.PUSH_EXIT_MARGIN = 0.01
+        self.MIN_DOWN_FRAMES = 3
+        self.REP_COOLDOWN_FRAMES = 4
         
         # State variables
         self.reset()
@@ -46,6 +54,9 @@ class PushupDetector:
         self.was_down = False  # Track if we were in down position
         self.rep_history = []
         self.rep_start_frame = None
+        self.missing_frames = 0
+        self.down_frames = 0
+        self.cooldown_frames = 0
     
     def start_recalibration(self):
         """Start recalibration process"""
@@ -182,6 +193,27 @@ class PushupDetector:
         }
         
         if result.pose_landmarks:
+            calib_req = [
+                self.mp_pose.PoseLandmark.NOSE,
+                self.mp_pose.PoseLandmark.LEFT_SHOULDER,
+                self.mp_pose.PoseLandmark.RIGHT_SHOULDER,
+            ]
+            count_req = calib_req + [
+                self.mp_pose.PoseLandmark.LEFT_HIP,
+                self.mp_pose.PoseLandmark.RIGHT_HIP,
+                self.mp_pose.PoseLandmark.LEFT_ANKLE,
+                self.mp_pose.PoseLandmark.RIGHT_ANKLE,
+            ]
+            req = count_req
+            min_vis = self.MIN_COUNTING_VISIBILITY
+            if (not self.calibrating and
+                    any(result.pose_landmarks.landmark[i].visibility < min_vis for i in req)):
+                self.missing_frames += 1
+                status['status_text'] = "Tracking unstable - hold still"
+                status['pushup_count'] = self.pushup_count
+                return frame, status
+
+            self.missing_frames = 0
             status['person_detected'] = True
             lm = result.pose_landmarks.landmark
             
@@ -212,21 +244,28 @@ class PushupDetector:
             
             # Push-up detection (only after calibration)
             elif not self.calibrating:
+                if self.cooldown_frames > 0:
+                    self.cooldown_frames -= 1
+                enter_threshold = self.pushup_threshold + self.PUSH_ENTER_MARGIN
+                exit_threshold = self.baseline_nose_y - self.PUSH_EXIT_MARGIN
                 # Check if nose goes down (pushing down)
-                if not self.pushing_down and self.smoothed_nose_y >= self.pushup_threshold:
+                if (not self.pushing_down and self.cooldown_frames == 0 and
+                        self.smoothed_nose_y >= enter_threshold):
                     self.pushing_down = True
                     self.rep_start_frame = frame_index
                     self.was_down = True
+                    self.down_frames = 0
                     status['status_text'] = "Pushing Down ↓"
                     self.current_pushup_warnings = []
                     self.current_pushup_bad_moves = 0
                 
                 # Check if nose returns to baseline (pushing up)
-                elif self.pushing_down and self.smoothed_nose_y < self.baseline_nose_y:
+                elif self.pushing_down and self.smoothed_nose_y <= exit_threshold:
                     # Only count as completed push-up if we went down first
-                    if self.was_down:
+                    if self.was_down and self.down_frames >= self.MIN_DOWN_FRAMES:
                         self.pushing_down = False
                         self.was_down = False
+                        self.cooldown_frames = self.REP_COOLDOWN_FRAMES
                         self.pushup_count += 1
                         
                         # Calculate points: 10 points per push-up, -2 per bad move
@@ -248,9 +287,12 @@ class PushupDetector:
                         status['points'] = points
                         status['bad_moves'] = self.current_pushup_bad_moves
                     else:
-                        status['status_text'] = f"Up Position ({self.pushup_count} push-ups)"
+                        self.pushing_down = False
+                        self.was_down = False
+                        status['status_text'] = "Depth too short - go lower"
                 else:
                     if self.pushing_down:
+                        self.down_frames += 1
                         status['status_text'] = f"Pushing Down ({self.pushup_count} push-ups)"
                     else:
                         status['status_text'] = f"Up Position ({self.pushup_count} push-ups)"
@@ -298,6 +340,16 @@ class PushupDetector:
                 connection_drawing_spec=connection_drawing_spec
             )
         
+        elif self.missing_frames < self.MAX_MISSING_FRAMES:
+            self.missing_frames += 1
+            status['status_text'] = "Tracking lost briefly - hold position"
+        else:
+            self.pushing_down = False
+            self.was_down = False
+            self.down_frames = 0
+            self.missing_frames = self.MAX_MISSING_FRAMES
+            status['status_text'] = "No Person"
+
         # Draw calibration lines (only after calibration is complete)
         if not self.calibrating and self.baseline_nose_y is not None and self.pushup_threshold is not None:
             h, w = frame.shape[:2]

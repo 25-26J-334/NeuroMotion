@@ -4,6 +4,7 @@ Separate from jump_detector.py to keep functionality isolated
 """
 import cv2
 import mediapipe as mp
+import mediapipe_compat  # noqa: F401 — patches mp.solutions for mediapipe >= 0.10
 import numpy as np
 from math import degrees, atan2
 from typing import Dict, List, Tuple
@@ -26,6 +27,13 @@ class SquatDetector:
         self.FORWARD_LEAN_THRESHOLD = 30
         self.KNEE_OVER_TOE_THRESHOLD = 0.1
         self.BACK_ARCH_THRESHOLD = 20  # Excessive back arching
+        self.MIN_CALIBRATION_VISIBILITY = 0.30
+        self.MIN_COUNTING_VISIBILITY = 0.40
+        self.MAX_MISSING_FRAMES = 10
+        self.SQUAT_ENTER_MARGIN = 0.02
+        self.SQUAT_EXIT_MARGIN = 0.01
+        self.MIN_DOWN_FRAMES = 3
+        self.REP_COOLDOWN_FRAMES = 4
         
         # State variables
         self.reset()
@@ -46,6 +54,9 @@ class SquatDetector:
         self.was_down = False  # Track if we were in down position
         self.rep_history = []
         self.rep_start_frame = None
+        self.missing_frames = 0
+        self.down_frames = 0
+        self.cooldown_frames = 0
     
     def start_recalibration(self):
         """Start recalibration process"""
@@ -173,6 +184,26 @@ class SquatDetector:
         }
         
         if result.pose_landmarks:
+            calib_req = [
+                self.mp_pose.PoseLandmark.LEFT_HIP,
+                self.mp_pose.PoseLandmark.RIGHT_HIP,
+            ]
+            count_req = calib_req + [
+                self.mp_pose.PoseLandmark.LEFT_KNEE,
+                self.mp_pose.PoseLandmark.RIGHT_KNEE,
+                self.mp_pose.PoseLandmark.LEFT_ANKLE,
+                self.mp_pose.PoseLandmark.RIGHT_ANKLE,
+            ]
+            req = count_req
+            min_vis = self.MIN_COUNTING_VISIBILITY
+            if (not self.calibrating and
+                    any(result.pose_landmarks.landmark[i].visibility < min_vis for i in req)):
+                self.missing_frames += 1
+                status['status_text'] = "Tracking unstable - hold still"
+                status['squat_count'] = self.squat_count
+                return frame, status
+
+            self.missing_frames = 0
             status['person_detected'] = True
             lm = result.pose_landmarks.landmark
             
@@ -203,21 +234,28 @@ class SquatDetector:
             
             # Squat detection (only after calibration)
             elif not self.calibrating:
+                if self.cooldown_frames > 0:
+                    self.cooldown_frames -= 1
+                enter_threshold = self.squat_threshold + self.SQUAT_ENTER_MARGIN
+                exit_threshold = self.baseline_hip_y - self.SQUAT_EXIT_MARGIN
                 # Check if hip goes down (squatting down)
-                if not self.squatting and self.smoothed_hip_y >= self.squat_threshold:
+                if (not self.squatting and self.cooldown_frames == 0 and
+                        self.smoothed_hip_y >= enter_threshold):
                     self.squatting = True
                     self.rep_start_frame = frame_index
                     self.was_down = True
+                    self.down_frames = 0
                     status['status_text'] = "Squatting Down ↓"
                     self.current_squat_warnings = []
                     self.current_squat_bad_moves = 0
                 
                 # Check if hip returns to baseline (standing up)
-                elif self.squatting and self.smoothed_hip_y < self.baseline_hip_y:
+                elif self.squatting and self.smoothed_hip_y <= exit_threshold:
                     # Only count as completed squat if we went down first
-                    if self.was_down:
+                    if self.was_down and self.down_frames >= self.MIN_DOWN_FRAMES:
                         self.squatting = False
                         self.was_down = False
+                        self.cooldown_frames = self.REP_COOLDOWN_FRAMES
                         self.squat_count += 1
                         
                         # Calculate points: 10 points per squat, -2 per bad move
@@ -239,9 +277,12 @@ class SquatDetector:
                         status['points'] = points
                         status['bad_moves'] = self.current_squat_bad_moves
                     else:
-                        status['status_text'] = f"Standing ({self.squat_count} squats)"
+                        self.squatting = False
+                        self.was_down = False
+                        status['status_text'] = "Depth too short - go lower"
                 else:
                     if self.squatting:
+                        self.down_frames += 1
                         status['status_text'] = f"Squatting Down ({self.squat_count} squats)"
                     else:
                         status['status_text'] = f"Standing ({self.squat_count} squats)"
@@ -289,6 +330,16 @@ class SquatDetector:
                 connection_drawing_spec=connection_drawing_spec
             )
         
+        elif self.missing_frames < self.MAX_MISSING_FRAMES:
+            self.missing_frames += 1
+            status['status_text'] = "Tracking lost briefly - hold position"
+        else:
+            self.squatting = False
+            self.was_down = False
+            self.down_frames = 0
+            self.missing_frames = self.MAX_MISSING_FRAMES
+            status['status_text'] = "No Person"
+
         # Draw calibration lines (only after calibration is complete)
         if not self.calibrating and self.baseline_hip_y is not None and self.squat_threshold is not None:
             h, w = frame.shape[:2]

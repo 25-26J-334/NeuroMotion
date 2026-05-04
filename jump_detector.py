@@ -4,6 +4,7 @@ Extracted from the original jump.py for use in Streamlit
 """
 import cv2
 import mediapipe as mp
+import mediapipe_compat  # noqa: F401 — patches mp.solutions for mediapipe >= 0.10
 import numpy as np
 from math import degrees, atan2
 from typing import Dict, List, Tuple
@@ -27,6 +28,13 @@ class JumpDetector:
         self.KNEE_VALGUS_THRESHOLD = 15
         self.FORWARD_LEAN_THRESHOLD = 30
         self.KNEE_OVER_TOE_THRESHOLD = 0.1
+        self.MIN_CALIBRATION_VISIBILITY = 0.30
+        self.MIN_COUNTING_VISIBILITY = 0.40
+        self.MAX_MISSING_FRAMES = 10
+        self.MIN_AIRBORNE_FRAMES = 2
+        self.REP_COOLDOWN_FRAMES = 4
+        self.JUMP_ENTER_MARGIN = 0.01
+        self.JUMP_EXIT_MARGIN = 0.005
         
         # State variables
         self.reset()
@@ -48,6 +56,9 @@ class JumpDetector:
         self.current_jump_bad_moves = 0
         self.rep_history = []
         self.rep_start_frame = None
+        self.missing_frames = 0
+        self.airborne_frames = 0
+        self.cooldown_frames = 0
         # Ensure jump_height is preserved (don't reset it - it's a configuration, not state)
         if not hasattr(self, 'jump_height') or self.jump_height is None:
             self.jump_height = "medium"  # Default fallback
@@ -160,6 +171,26 @@ class JumpDetector:
         }
         
         if result.pose_landmarks:
+            calib_req = [
+                self.mp_pose.PoseLandmark.LEFT_HIP,
+                self.mp_pose.PoseLandmark.RIGHT_HIP,
+                self.mp_pose.PoseLandmark.LEFT_KNEE,
+                self.mp_pose.PoseLandmark.RIGHT_KNEE,
+            ]
+            count_req = calib_req + [
+                self.mp_pose.PoseLandmark.LEFT_ANKLE,
+                self.mp_pose.PoseLandmark.RIGHT_ANKLE,
+            ]
+            req = count_req
+            min_vis = self.MIN_COUNTING_VISIBILITY
+            if (not self.calibrating and
+                    any(result.pose_landmarks.landmark[i].visibility < min_vis for i in req)):
+                self.missing_frames += 1
+                status['status_text'] = "Tracking unstable - hold still"
+                status['jump_count'] = self.jump_count
+                return frame, status
+
+            self.missing_frames = 0
             status['person_detected'] = True
             lm = result.pose_landmarks.landmark
             
@@ -268,39 +299,52 @@ class JumpDetector:
             
             # Jump detection (only after calibration) - using trigger point
             elif not self.calibrating:
+                if self.cooldown_frames > 0:
+                    self.cooldown_frames -= 1
                 # Check if trigger point goes above yellow line (jumping)
                 # When trigger point goes above yellow line = jump detected
-                if not self.jumping and self.smoothed_trigger_y < self.jump_threshold:
+                enter_threshold = self.jump_threshold - self.JUMP_ENTER_MARGIN
+                exit_threshold = self.jump_threshold + self.JUMP_EXIT_MARGIN
+
+                if (not self.jumping and self.cooldown_frames == 0 and
+                        self.smoothed_trigger_y < enter_threshold):
                     self.jumping = True
                     self.rep_start_frame = frame_index
+                    self.airborne_frames = 0
                     status['status_text'] = "Jumping ↑"
                     self.current_jump_warnings = []
                     self.current_jump_bad_moves = 0
                 
                 # Check if trigger point returns to or below yellow line (landed)
-                elif self.jumping and self.smoothed_trigger_y >= self.jump_threshold:
+                elif self.jumping and self.smoothed_trigger_y >= exit_threshold:
                     self.jumping = False
-                    self.jump_count += 1
+                    if self.airborne_frames >= self.MIN_AIRBORNE_FRAMES:
+                        self.jump_count += 1
+                        self.cooldown_frames = self.REP_COOLDOWN_FRAMES
                     
-                    # Calculate points: 10 points per jump, -2 per bad move
-                    points = 10 - (self.current_jump_bad_moves * 2)
-                    points = max(0, points)  # No negative points
-                    
-                    # Record rep history
-                    self.rep_history.append({
-                        'rep_number': self.jump_count,
-                        'start_frame': self.rep_start_frame,
-                        'end_frame': frame_index,
-                        'points': points
-                    })
-                    
-                    status['jump_count'] = self.jump_count
-                    status['status_text'] = f"Landed ✓ ({self.jump_count} jumps)"
-                    status['warnings'] = self.current_jump_warnings.copy()
-                    status['danger_detected'] = self.danger_detected
-                    status['points'] = points
-                    status['bad_moves'] = self.current_jump_bad_moves
+                        # Calculate points: 10 points per jump, -2 per bad move
+                        points = 10 - (self.current_jump_bad_moves * 2)
+                        points = max(0, points)  # No negative points
+                        
+                        # Record rep history
+                        self.rep_history.append({
+                            'rep_number': self.jump_count,
+                            'start_frame': self.rep_start_frame,
+                            'end_frame': frame_index,
+                            'points': points
+                        })
+                        
+                        status['jump_count'] = self.jump_count
+                        status['status_text'] = f"Landed ✓ ({self.jump_count} jumps)"
+                        status['warnings'] = self.current_jump_warnings.copy()
+                        status['danger_detected'] = self.danger_detected
+                        status['points'] = points
+                        status['bad_moves'] = self.current_jump_bad_moves
+                    else:
+                        status['status_text'] = "Jump too short - try fuller range"
                 else:
+                    if self.jumping:
+                        self.airborne_frames += 1
                     status['status_text'] = f"Standing ({self.jump_count} jumps)"
             
             # Get landmarks for posture analysis
@@ -346,6 +390,15 @@ class JumpDetector:
                 connection_drawing_spec=connection_drawing_spec
             )
         
+        elif self.missing_frames < self.MAX_MISSING_FRAMES:
+            self.missing_frames += 1
+            status['status_text'] = "Tracking lost briefly - hold position"
+        else:
+            self.jumping = False
+            self.airborne_frames = 0
+            self.missing_frames = self.MAX_MISSING_FRAMES
+            status['status_text'] = "No Person"
+
         # Draw calibration lines (only after calibration is complete) - draw outside pose detection
         # so lines remain visible even if person temporarily moves out of frame
         if not self.calibrating and self.baseline_y is not None and self.jump_threshold is not None:
