@@ -110,6 +110,46 @@ class Database:
         if changes_made and self.connection:
             self.connection.commit()
 
+        self._ensure_biometric_tables()
+
+    def _ensure_biometric_tables(self):
+        """Create biometric tables for existing databases."""
+        if not self.is_connected():
+            return
+        self.execute_query(
+            """
+            CREATE TABLE IF NOT EXISTS biometric_profiles (
+                user_id INTEGER PRIMARY KEY,
+                height_cm REAL NOT NULL,
+                weight_kg REAL NOT NULL,
+                resting_hr INTEGER,
+                sex TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            );
+            """,
+            fetch=False,
+        )
+        self.execute_query(
+            """
+            CREATE TABLE IF NOT EXISTS biometric_readings (
+                reading_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                weight_kg REAL,
+                hr_bpm INTEGER,
+                sleep_hours REAL,
+                notes TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            );
+            """,
+            fetch=False,
+        )
+        self.execute_query(
+            "CREATE INDEX IF NOT EXISTS idx_biometric_readings_user_time ON biometric_readings(user_id, recorded_at);",
+            fetch=False,
+        )
+
     def _create_base_tables(self):
         """Create all base tables if they don't exist"""
         if not self.is_connected():
@@ -804,3 +844,63 @@ class Database:
         ORDER BY priority DESC, created_at DESC
         """
         return self.execute_query(query, (user_id, rec_type)) or []
+
+    def get_user_biometric_profile(self, user_id: int) -> Optional[Dict]:
+        """Return saved biometric profile for user, or None."""
+        self._ensure_biometric_tables()
+        rows = self.execute_query(
+            "SELECT * FROM biometric_profiles WHERE user_id = ?",
+            (user_id,),
+        )
+        return rows[0] if rows else None
+
+    def save_biometric_profile(
+        self,
+        user_id: int,
+        height_cm: float,
+        weight_kg: float,
+        resting_hr: Optional[int] = None,
+        sex: Optional[str] = None,
+    ) -> bool:
+        """Insert or replace baseline biometric profile."""
+        self._ensure_biometric_tables()
+        q = """
+        INSERT OR REPLACE INTO biometric_profiles (user_id, height_cm, weight_kg, resting_hr, sex, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """
+        n = self.execute_query(
+            q,
+            (user_id, height_cm, weight_kg, resting_hr, sex, datetime.now()),
+            fetch=False,
+        )
+        return n is not None and n > 0
+
+    def add_biometric_reading(
+        self,
+        user_id: int,
+        weight_kg: Optional[float] = None,
+        hr_bpm: Optional[int] = None,
+        sleep_hours: Optional[float] = None,
+        notes: Optional[str] = None,
+    ) -> bool:
+        """Append an optional daily log row (weight, HR, sleep, notes)."""
+        self._ensure_biometric_tables()
+        q = """
+        INSERT INTO biometric_readings (user_id, weight_kg, hr_bpm, sleep_hours, notes)
+        VALUES (?, ?, ?, ?, ?)
+        """
+        n = self.execute_query(
+            q, (user_id, weight_kg, hr_bpm, sleep_hours, notes), fetch=False
+        )
+        return n is not None and n > 0
+
+    def get_biometric_readings(self, user_id: int, limit: int = 90) -> List[Dict]:
+        """Recent biometric readings, newest first."""
+        self._ensure_biometric_tables()
+        q = """
+        SELECT * FROM biometric_readings
+        WHERE user_id = ?
+        ORDER BY recorded_at DESC
+        LIMIT ?
+        """
+        return self.execute_query(q, (user_id, limit)) or []
